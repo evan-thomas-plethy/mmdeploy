@@ -92,10 +92,23 @@ def from_torchscript(torchscript_model: Union[str,
     inputs = []
     outputs = []
 
-    for name in input_names:
-        shape = create_shape(name, input_shapes[name])
-        inputs.append(shape)
+    mean = [123.675, 116.28, 103.53]
+    std = [58.395, 57.12, 57.375]
 
+    global_std = sum(std)/len(std)        
+    scale = 1.0 / global_std                
+
+    bias = [- m / s for m, s in zip(mean, std)]
+
+    for name in input_names:
+        print(f"Processing input: {name}")
+        shape = create_shape(name, input_shapes[name])
+        inputs.append(ct.ImageType(
+            shape=shape,
+            scale=scale,
+            bias=bias
+        ))
+    
     for name in output_names:
         outputs.append(ct.TensorType(name=name))
 
@@ -104,6 +117,7 @@ def from_torchscript(torchscript_model: Union[str,
     else:
         compute_precision = ct.precision[compute_precision]
 
+    print(f"Converting model to {convert_to}")
     mlmodel = ct.convert(
         model=torchscript_model,
         inputs=inputs,
