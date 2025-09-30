@@ -24,7 +24,7 @@ def get_post_processing_params(deploy_cfg: Union[str, mmengine.Config]):
     assert codebase_key in deploy_cfg
     codebase_config = deploy_cfg[codebase_key]
     post_params = codebase_config.get('post_processing', None)
-    assert post_params is not None, 'Failed to get `post_processing`.'
+    # assert post_params is not None, 'Failed to get `post_processing`.'
     return post_params
 
 

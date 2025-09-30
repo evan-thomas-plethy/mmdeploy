@@ -92,8 +92,8 @@ def from_torchscript(torchscript_model: Union[str,
     inputs = []
     outputs = []
 
-    mean = [123.675, 116.28, 103.53]
-    std = [58.395, 57.12, 57.375]
+    mean = [103.53, 116.28, 123.675]
+    std = [57.375, 57.12, 58.395]
 
     global_std = sum(std)/len(std)        
     scale = 1.0 / global_std                
@@ -102,11 +102,13 @@ def from_torchscript(torchscript_model: Union[str,
 
     for name in input_names:
         print(f"Processing input: {name}")
-        shape = create_shape(name, input_shapes[name])
+        tensor_type = create_shape(name, input_shapes[name])
+        # Extract the default shape from TensorType for ImageType
+        shape = tensor_type.shape.default
         inputs.append(ct.ImageType(
             shape=shape,
             scale=scale,
-            bias=bias
+            bias=bias,
         ))
     
     for name in output_names:

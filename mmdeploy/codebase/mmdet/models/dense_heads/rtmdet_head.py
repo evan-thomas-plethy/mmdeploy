@@ -90,6 +90,9 @@ def rtmdet_head__predict_by_feat(self,
 
     deploy_cfg = ctx.cfg
     post_params = get_post_processing_params(deploy_cfg)
+    if post_params is None:
+        return bboxes, scores
+    
     max_output_boxes_per_class = post_params.max_output_boxes_per_class
     iou_threshold = cfg.nms.get('iou_threshold', post_params.iou_threshold)
     score_threshold = cfg.get('score_thr', post_params.score_threshold)
@@ -211,6 +214,9 @@ def rtmdet_head__predict_by_feat__ncnn(
     batch_mlvl_priors = torch.cat([batch_mlvl_priors, batch_mlvl_vars], dim=1)
     deploy_cfg = ctx.cfg
     post_params = get_post_processing_params(deploy_cfg)
+    if post_params is None:
+        return prior_box_ncnn, scores
+    
     iou_threshold = cfg.nms.get('iou_threshold', post_params.iou_threshold)
     score_threshold = cfg.get('score_thr', post_params.score_threshold)
     pre_top_k = post_params.pre_top_k

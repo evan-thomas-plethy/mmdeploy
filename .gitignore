@@ -123,11 +123,15 @@ data
 *.log.json
 work_dirs
 work_dirs/
+work_dir
+work_dir/
 
 # Pytorch
 *.pth
 *.py~
 *.sh~
+
+*.mlmodel
 
 #clion's build directory
 /cmake-build-debug*

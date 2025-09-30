@@ -1,9 +1,17 @@
-breathe
-h5py
-mmcv
-mmengine
-onnx>=1.8.0
-opencv-python==4.5.4.60
-sphinxcontrib-mermaid
-torch
-urllib3<2.0.0
+# breathe
+# h5py
+# mmcv
+# mmengine
+# onnx>=1.8.0
+# opencv-python==4.5.4.60
+# sphinxcontrib-mermaid
+# torch
+# urllib3<2.0.0
+
+numpy==1.21.6 
+munkres==1.1.4
+regex==2023.10.3
+scipy==1.7.3
+titlecase==0.12.0
+torch==1.8.1
+xtcocotools==1.13
