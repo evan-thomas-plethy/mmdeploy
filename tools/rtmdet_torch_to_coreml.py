@@ -33,5 +33,5 @@ coreml_model = ct.convert(
 )
 
 # Save the converted CoreML model
-coreml_model.save("rtmdet-nano_pretrain_Image.mlmodel")
-print("Model successfully converted and saved as 'rtmdet-nano_pretrain_Image.mlmodel'")
+coreml_model.save("rtmdet-nano_pretrained.mlmodel")
+print("Model successfully converted and saved as 'rtmdet-nano_pretrained.mlmodel'")

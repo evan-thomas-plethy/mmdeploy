@@ -132,6 +132,7 @@ work_dir/*
 *.sh~
 
 *.mlmodel
+*.tflite
 saved_models/*
 
 #clion's build directory

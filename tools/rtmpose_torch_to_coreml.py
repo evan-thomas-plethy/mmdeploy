@@ -2,7 +2,7 @@ import torch
 import coremltools as ct
 
 # Load your TorchScript model
-model_path = "work_dir/rtmpose/end2end.pt"
+model_path = "work_dir/rtmpose-m_pretrained/end2end.pt"
 traced_model = torch.jit.load(model_path)
 traced_model.eval()
 
@@ -28,5 +28,5 @@ coreml_model = ct.convert(
 )
 
 # Save the converted CoreML model
-coreml_model.save("rtmpose-m_Image.mlmodel")
-print("Model successfully converted and saved as 'rtmpose-m_Image.mlmodel'")
+coreml_model.save("rtmpose-m_pretrained.mlmodel")
+print("Model successfully converted and saved as 'rtmpose-m_pretrained.mlmodel'")

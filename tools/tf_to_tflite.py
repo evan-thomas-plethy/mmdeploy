@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 
-model_path = "models/rtmpose-m_saved_model"
+model_path = "saved_models/rtmdet-nano_pretrained_saved_model"
 
 # Load the model
 model = tf.saved_model.load(model_path)
@@ -10,12 +10,12 @@ model = tf.saved_model.load(model_path)
 if 'serving_default' not in model.signatures:
     print("No serving_default signature found. Adding one...")
     # Define a serving function with an input signature for RTMPose (256x192 input)
-    @tf.function(input_signature=[tf.TensorSpec(shape=[1, 3, 256, 192], dtype=tf.float32)])
+    @tf.function(input_signature=[tf.TensorSpec(shape=[1, 3, 320, 320], dtype=tf.float32)])
     def serving_fn(input_tensor):
         return model(input_tensor)
 
     # Save the model with the serving function and signature
-    saved_model_path = "models/rtmpose-m_saved_model_with_signature"
+    saved_model_path = "saved_models/rtmdet-nano_pretrained_saved_model_with_signature"
     tf.saved_model.save(model, saved_model_path, signatures={'serving_default': serving_fn})
     model_path = saved_model_path  # Use the new model path for conversion
 else:
@@ -56,5 +56,5 @@ converter.target_spec.supported_ops = [
 tflite_model_quant = converter.convert()
 
 # Save the TFLite model
-with open("models/rtmpose-m_int8.tflite", "wb") as f:
+with open("rtmdet-nano_pretrained_int8.tflite", "wb") as f:
     f.write(tflite_model_quant)
