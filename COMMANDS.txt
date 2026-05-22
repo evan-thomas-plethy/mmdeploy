@@ -1,6 +1,9 @@
+# To shutdown GPU safely
+sudo shutdown -h +1
+
 # To convert rtmpose to CoreML:
 1. # With mmdeploy env (should be clone of mmpose with mmdeploy installed (may need mim install mmdeploy==1.3.1 && conda deactivate && conda activate mmdeploy))
-python tools/deploy.py configs/mmpose/pose-detection_simcc_coreml_static-256x192.py mmpose/configs/rtmpose-m_8xb256-420e_aic-coco-256x192.py mmpose/checkpoints/rtmpose-m_pretrained.pth demo.jpg --work-dir work_dir/rtmpose-m_pretrained --device cpu --dump-info
+python tools/deploy.py configs/mmpose/pose-detection_simcc_coreml_static-256x192.py mmpose/configs/rtmpose-m_8xb256-420e_aic-coco-256x192.py mmpose/checkpoints/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep/lr_5e-4/best_coco_AP_epoch_50.pth demo.jpg --work-dir work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4 --device cpu --dump-info
 
 2. # Then conda deactivate && conda activate model_conversion
 # Update and run
@@ -26,9 +29,8 @@ python tools/rtmdet_torch_to_coreml.py
 python tools/torchscript_to_onnx.py
 
 3. # Run
-onnx2tf -i work_dir/rtmdet-nano_pretrained/rtmdet-nano_pretrained.onnx
-# A new saved_model directory should have been created at root mmdeploy
-# Please move this into saved_models/ and rename appropriately
+onnx2tf -i work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.onnx
+mv saved_model saved_models/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4_saved_model
 
 4. # To quantize, update and run
 python tools/tf_to_tflite.py

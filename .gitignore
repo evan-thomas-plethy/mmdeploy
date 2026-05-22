@@ -126,6 +126,9 @@ work_dirs/*
 work_dir
 work_dir/*
 
+mmpose/checkpoints/
+mmdet/checkpoints/
+
 # Pytorch
 *.pth
 *.py~

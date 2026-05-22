@@ -1,8 +1,8 @@
 import torch
 import sys
 
-INPUT_MODEL = "work_dir/rtmdet-nano_pretrained/end2end.pt"
-OUTPUT_MODEL = "work_dir/rtmdet-nano_pretrained/rtmdet-nano_pretrained.onnx"
+INPUT_MODEL = "work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/end2end.pt"
+OUTPUT_MODEL = "work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.onnx"
 
 try:
     # Load the TorchScript model
@@ -10,7 +10,7 @@ try:
     scripted_model.eval()  # set to evaluation mode
 
     # ENSURE TO CHANGE FOR RTMDET VS RTMPOSE
-    dummy_input = torch.randn(1, 3, 320, 320)
+    dummy_input = torch.randn(1, 3, 256, 192)
 
     torch.onnx.export(
         scripted_model,              # TorchScript model
