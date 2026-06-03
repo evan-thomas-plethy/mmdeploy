@@ -2,7 +2,7 @@ import torch
 import coremltools as ct
 
 # Load your TorchScript model
-model_path = "work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/end2end.pt"
+model_path = "work_dir/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5/end2end.pt"
 traced_model = torch.jit.load(model_path)
 traced_model.eval()
 
@@ -28,5 +28,5 @@ coreml_model = ct.convert(
 )
 
 # Save the converted CoreML model
-coreml_model.save("rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.mlmodel")
-print("Model successfully converted and saved as 'rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.mlmodel'")
+coreml_model.save("rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5.mlmodel")
+print("Model successfully converted and saved as 'rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5.mlmodel'")

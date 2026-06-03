@@ -3,8 +3,8 @@ import sys
 import tensorflow as tf
 import numpy as np
 
-model_path = "saved_models/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4_saved_model"
-out_tflite = "rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.tflite"
+model_path = "saved_models/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_saved_model"
+out_tflite = "rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_int8.tflite"
 
 try:
     # Load the model
@@ -19,7 +19,7 @@ try:
             return model(input_tensor)
 
         # Save the model with the serving function and signature
-        saved_model_path = "saved_models/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4_saved_model_with_signature"
+        saved_model_path = "saved_models/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_saved_model_with_signature"
         tf.saved_model.save(model, saved_model_path, signatures={'serving_default': serving_fn})
         model_path = saved_model_path  # Use the new model path for conversion
     else:

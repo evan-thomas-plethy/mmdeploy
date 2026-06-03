@@ -3,11 +3,23 @@ sudo shutdown -h +1
 
 # To convert rtmpose to CoreML:
 1. # With mmdeploy env (should be clone of mmpose with mmdeploy installed (may need mim install mmdeploy==1.3.1 && conda deactivate && conda activate mmdeploy))
-python tools/deploy.py configs/mmpose/pose-detection_simcc_coreml_static-256x192.py mmpose/configs/rtmpose-m_8xb256-420e_aic-coco-256x192.py mmpose/checkpoints/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep/lr_5e-4/best_coco_AP_epoch_50.pth demo.jpg --work-dir work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4 --device cpu --dump-info
+python tools/deploy.py configs/mmpose/pose-detection_simcc_coreml_static-256x192.py mmpose/configs/rtmpose-m_8xb256-420e_aic-coco-256x192.py mmpose/checkpoints/best_coco_AP_epoch_46.pth demo.jpg --work-dir work_dir/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5 --device cpu --dump-info
 
 2. # Then conda deactivate && conda activate model_conversion
 # Update and run
 python tools/rtmpose_torch_to_coreml.py
+
+3. # To quantize, update and run
+python tools/coreml_weight_quantize.py
+
+4a. # On Mac only (CoreML predict requires macOS): export val predictions JSON
+# Deps: coremltools, opencv-python, pillow, numpy (no mmpose)
+# Pre/post matches production iOS CoreML pipeline; needs val data on the Mac
+# Update model AND data paths in script if needed, then run
+python tools/coreml_export_val_predictions.py
+
+4b. # Copy predictions/*.keypoints.json to this machine, then compare AP (Linux OK; only needs xtcocotools)
+python tools/compare_coco_ap.py
 
 # To convert rtmdet to CoreML:
 1. # with mmdeploy env (ensure mmdeploy not installed: mim uninstall mmdeploy -y)
@@ -29,8 +41,13 @@ python tools/rtmdet_torch_to_coreml.py
 python tools/torchscript_to_onnx.py
 
 3. # Run
-onnx2tf -i work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.onnx
-mv saved_model saved_models/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4_saved_model
+onnx2tf -i work_dir/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5.onnx
+mv saved_model saved_models/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_saved_model
 
 4. # To quantize, update and run
 python tools/tf_to_tflite.py
+
+5. # Compare coco/AP between fp32 and int8 TFLite models
+conda deactivate && conda activate mmpose_mmdeploy
+# Update model AND data paths in script if needed, then run
+python tools/tflite_compare_ap.py

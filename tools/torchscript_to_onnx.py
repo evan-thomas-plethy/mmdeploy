@@ -1,8 +1,8 @@
 import torch
 import sys
 
-INPUT_MODEL = "work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/end2end.pt"
-OUTPUT_MODEL = "work_dir/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4/rtmpose-m_ground_based_exercises_dataset_v6_lr_sweep_lr_5e-4.onnx"
+INPUT_MODEL = "work_dir/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5/end2end.pt"
+OUTPUT_MODEL = "work_dir/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5.onnx"
 
 try:
     # Load the TorchScript model
