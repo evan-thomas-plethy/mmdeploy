@@ -1,19 +1,26 @@
+import sys
+from pathlib import Path
+
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
 import torch
 import coremltools as ct
 
-# Load your TorchScript model
-model_path = "work_dir/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5/end2end.pt"
-traced_model = torch.jit.load(model_path)
+from model_paths import END2END_PT, FP32_MLMODEL
+
+traced_model = torch.jit.load(str(END2END_PT))
 traced_model.eval()
 
 # MMPose preprocessing
 mean = [123.675, 116.28, 103.53]
 std = [58.395, 57.12, 57.375]
 
-global_std = sum(std)/len(std)        
-scale = 1.0 / global_std                
+global_std = sum(std) / len(std)
+scale = 1.0 / global_std
 
-bias = [- m / s for m, s in zip(mean, std)]
+bias = [-m / s for m, s in zip(mean, std)]
 
 coreml_model = ct.convert(
     traced_model,
@@ -27,6 +34,5 @@ coreml_model = ct.convert(
     ]
 )
 
-# Save the converted CoreML model
-coreml_model.save("rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5.mlmodel")
-print("Model successfully converted and saved as 'rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5.mlmodel'")
+coreml_model.save(str(FP32_MLMODEL))
+print(f"Model successfully converted and saved as '{FP32_MLMODEL}'")

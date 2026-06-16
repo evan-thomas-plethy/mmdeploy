@@ -8,20 +8,8 @@ TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
+from model_paths import ANN_FILE, FP32_PREDICTIONS, INT8_PREDICTIONS
 from pose_eval_common import compute_ap_from_predictions, print_ap_comparison
-
-# Must match MODEL_NAME in coreml_export_val_predictions.py
-MODEL_NAME = (
-    'rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5'
-)
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-MMPOSE_ROOT = REPO_ROOT.parent / 'mmpose'
-VAL_DATA_ROOT = MMPOSE_ROOT / 'data/coco_ground_based_exercises_v6'
-ANN_FILE = VAL_DATA_ROOT / 'annotations/person_keypoints_val2017.json'
-PREDICTIONS_DIR = REPO_ROOT / 'predictions'
-FP32_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_fp32.keypoints.json'
-INT8_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_int8.keypoints.json'
 
 
 def load_predictions(path):

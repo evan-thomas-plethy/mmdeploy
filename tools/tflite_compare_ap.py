@@ -13,19 +13,11 @@ try:
 except ImportError:
     from tflite_runtime.interpreter import Interpreter
 
-# Must match MODEL_NAME in torchscript_to_onnx.py / tf_to_tflite.py
-MODEL_NAME = (
-    'rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5'
-)
-SAVED_MODEL_DIR = Path('saved_models') / f'{MODEL_NAME}_saved_model'
-FP32_MODEL = SAVED_MODEL_DIR / f'{MODEL_NAME}_float32.tflite'
-INT8_MODEL = Path(f'{MODEL_NAME}_int8.tflite')
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-MMPOSE_ROOT = REPO_ROOT.parent / 'mmpose'
-VAL_DATA_ROOT = MMPOSE_ROOT / 'data/coco_ground_based_exercises_v6'
-ANN_FILE = VAL_DATA_ROOT / 'annotations/person_keypoints_val2017.json'
-IMG_PREFIX = VAL_DATA_ROOT / 'val2017'
+from model_paths import ANN_FILE, FP32_TFLITE, IMG_PREFIX, INT8_TFLITE, MMPOSE_ROOT
 
 INPUT_SIZE = (192, 256)  # (w, h), matches training codec input_size
 SIMCC_SPLIT_RATIO = 2.0
@@ -289,8 +281,8 @@ def evaluate_model(model_path, ann_file, img_prefix, get_simcc_maximum, oks_nms,
 def main():
     get_simcc_maximum, oks_nms, bbox_xyxy2cs, get_warp_matrix = _setup_mmpose_imports()
 
-    fp32_path = REPO_ROOT / FP32_MODEL
-    int8_path = REPO_ROOT / INT8_MODEL
+    fp32_path = FP32_TFLITE
+    int8_path = INT8_TFLITE
 
     for path in (fp32_path, int8_path, ANN_FILE, IMG_PREFIX):
         if not path.exists():

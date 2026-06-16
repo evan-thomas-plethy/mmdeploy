@@ -23,20 +23,15 @@ from rtmpose_coreml_utils import (
     run_coreml_predict,
 )
 
-# Must match MODEL_NAME in rtmpose_torch_to_coreml.py / coreml_weight_quantize.py
-MODEL_NAME = (
-    'rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_unfreeze_full_ld0.5'
+from model_paths import (
+    ANN_FILE,
+    FP32_MLMODEL,
+    FP32_PREDICTIONS,
+    IMG_PREFIX,
+    INT8_MLMODEL,
+    INT8_PREDICTIONS,
+    VAL_DATA_ROOT,
 )
-FP32_MODEL = f'{MODEL_NAME}.mlmodel'
-INT8_MODEL = f'{MODEL_NAME}_int8.mlmodel'
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-VAL_DATA_ROOT = REPO_ROOT.parent / 'mmpose/data/coco_ground_based_exercises_v6'
-ANN_FILE = VAL_DATA_ROOT / 'annotations/person_keypoints_val2017.json'
-IMG_PREFIX = VAL_DATA_ROOT / 'val2017'
-PREDICTIONS_DIR = REPO_ROOT / 'predictions'
-FP32_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_fp32.keypoints.json'
-INT8_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_int8.keypoints.json'
 
 
 def _bbox_xywh_from_xyxy(x1, y1, x2, y2):
@@ -135,8 +130,8 @@ def main():
         print(f'Running on first {max_samples} annotations only')
 
     models = [
-        (REPO_ROOT / FP32_MODEL, FP32_PREDICTIONS),
-        (REPO_ROOT / INT8_MODEL, INT8_PREDICTIONS),
+        (FP32_MLMODEL, FP32_PREDICTIONS),
+        (INT8_MLMODEL, INT8_PREDICTIONS),
     ]
     for model_path, output_path in models:
         if not model_path.exists():
