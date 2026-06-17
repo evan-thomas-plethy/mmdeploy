@@ -8,16 +8,26 @@ import cv2
 import numpy as np
 
 try:
-    import tensorflow as tf
-    Interpreter = tf.lite.Interpreter
+    from ai_edge_litert.interpreter import Interpreter
 except ImportError:
-    from tflite_runtime.interpreter import Interpreter
+    try:
+        import tensorflow as tf
+        Interpreter = tf.lite.Interpreter
+    except ImportError:
+        from tflite_runtime.interpreter import Interpreter
 
 TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-from model_paths import ANN_FILE, FP32_TFLITE, IMG_PREFIX, INT8_TFLITE, MMPOSE_ROOT
+from model_paths import (
+    ANN_FILE,
+    FP16_TFLITE,
+    FP32_TFLITE,
+    IMG_PREFIX,
+    INT8_TFLITE,
+    MMPOSE_ROOT,
+)
 
 INPUT_SIZE = (192, 256)  # (w, h), matches training codec input_size
 SIMCC_SPLIT_RATIO = 2.0
@@ -278,13 +288,41 @@ def evaluate_model(model_path, ann_file, img_prefix, get_simcc_maximum, oks_nms,
     return {name: float(value) for name, value in zip(stats_names, coco_eval.stats)}
 
 
+def _print_comparison_table(baseline_metrics, variant_metrics_by_label):
+    labels = list(variant_metrics_by_label)
+    header = f'{"Metric":<12} {"fp32":>12}'
+    for label in labels:
+        header += f' {label:>12}'
+    for label in labels:
+        header += f' {"d" + label:>12}'
+    print(header)
+    print('-' * len(header))
+
+    for metric in baseline_metrics:
+        fp32_val = baseline_metrics[metric]
+        row = f'{metric:<12} {fp32_val:>12.4f}'
+        for label in labels:
+            row += f' {variant_metrics_by_label[label][metric]:>12.4f}'
+        for label in labels:
+            delta = variant_metrics_by_label[label][metric] - fp32_val
+            row += f' {delta:>+12.4f}'
+        print(row)
+
+    print('-' * len(header))
+    for label in labels:
+        ap_delta = variant_metrics_by_label[label]['AP'] - baseline_metrics['AP']
+        print(f'Primary coco/AP delta ({label} - fp32): {ap_delta:+.4f}')
+
+
 def main():
     get_simcc_maximum, oks_nms, bbox_xyxy2cs, get_warp_matrix = _setup_mmpose_imports()
 
     fp32_path = FP32_TFLITE
+    fp16_path = FP16_TFLITE
     int8_path = INT8_TFLITE
 
-    for path in (fp32_path, int8_path, ANN_FILE, IMG_PREFIX):
+    required_paths = (fp32_path, fp16_path, int8_path, ANN_FILE, IMG_PREFIX)
+    for path in required_paths:
         if not path.exists():
             print(f'ERROR: Required path not found: {path}', file=sys.stderr)
             sys.exit(1)
@@ -312,24 +350,21 @@ def main():
     fp32_metrics = evaluate_model(fp32_path, **eval_kwargs)
     print()
 
+    print(f'Evaluating fp16 model: {fp16_path}')
+    fp16_metrics = evaluate_model(fp16_path, **eval_kwargs)
+    print()
+
     print(f'Evaluating int8 model: {int8_path}')
     int8_metrics = evaluate_model(int8_path, **eval_kwargs)
     print()
 
-    print('=' * 72)
+    print('=' * 96)
     print('COCO AP comparison (same metric as training save_best=coco/AP)')
-    print('=' * 72)
-    print(f'{"Metric":<12} {"fp32":>12} {"int8":>12} {"delta":>12}')
-    print('-' * 72)
-    for metric in fp32_metrics:
-        fp32_val = fp32_metrics[metric]
-        int8_val = int8_metrics[metric]
-        delta = int8_val - fp32_val
-        print(f'{metric:<12} {fp32_val:>12.4f} {int8_val:>12.4f} {delta:>+12.4f}')
-
-    ap_delta = int8_metrics['AP'] - fp32_metrics['AP']
-    print('-' * 72)
-    print(f'Primary coco/AP delta (int8 - fp32): {ap_delta:+.4f}')
+    print('=' * 96)
+    _print_comparison_table(
+        fp32_metrics,
+        {'fp16': fp16_metrics, 'int8': int8_metrics},
+    )
 
 
 if __name__ == '__main__':

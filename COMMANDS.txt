@@ -6,8 +6,14 @@ sudo shutdown -h +1
 # =============================================================================
 #   mmdeploy         TorchScript export via tools/deploy.py
 #                    (clone of mmpose + mim install mmdeploy==1.3.1)
-#   model_conversion CoreML/TFLite conversion, onnx2tf, TFLite val (tflite_compare_ap.py)
-#   mmpose           COCO AP scoring from JSON predictions (compare_coco_ap.py)
+#   model_conversion CoreML/TFLite conversion, onnx2tf, tf_to_tflite (steps 2–4)
+#   mmpose           COCO AP + TFLite val + overlays (compare_coco_ap.py,
+#                    tflite_compare_ap.py, overlay_val_models.py,
+#                    overlay_frames_to_video.py)
+#                    Always: export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
+#                    One-time for TFLite val/overlays (does NOT change numpy/mmcv/etc.):
+#                      pip install "ai-edge-litert==2.1.5"
+#                    Do NOT install tensorflow into mmpose (would force numpy upgrade).
 #
 # From mmdeploy/:  cd ~/visionAI/mmdeploy
 
@@ -28,23 +34,32 @@ sudo shutdown -h +1
 # Update MODEL_NAME when working with a different checkpoint/export.
 # Tool scripts read paths from mmdeploy/tools/model_paths.py (single source of truth).
 MODEL_NAME=rtmpose-m_merged_gbe_v9_gbe_app_vids_various_versions_sweep_merged_gbe_v9_app_vids_v4_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_lr1e-3
+# Val set for AP / overlays / CoreML step 4a (must match VAL_DATA_DIRNAME in tools/model_paths.py)
+VAL_DATA_DIRNAME=merged_gbe_v9_gbe_app_vids_v4
 # TFLite pipeline uses the same basename as MODEL_NAME for this project.
 TFLITE_MODEL_NAME=${MODEL_NAME}
 LOCAL_VISIONAI=/Users/evanthomas/Plethy/visionAI
 REMOTE_VISIONAI=/home/ubuntu/visionAI
 
 # Expected validation artifacts (paths relative to mmdeploy/ unless noted):
+#   Val annotations:                     mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
+#   Val images:                          mmpose/data/${VAL_DATA_DIRNAME}/val2017/
 #   CoreML fp32 (baseline for step 4a):  ${MODEL_NAME}.mlmodel
 #   CoreML int8:                         ${MODEL_NAME}_int8.mlmodel
 #   TFLite fp32 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
+#   TFLite fp16 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
 #   TFLite int8 (from tf_to_tflite, 4):  ${TFLITE_MODEL_NAME}_int8.tflite
+#   CoreML AP report (step 4b):          coreml_ap.txt
+#   TFLite AP report (step 5):           tflite_ap.txt
+#   Overlays (step 6):                   overlays/${MODEL_NAME}/{coreml_fp32,coreml_int8,tflite_fp32,tflite_int8}/
+#   Overlay videos (step 7):             overlays/${MODEL_NAME}/videos/{coreml_fp32,coreml_int8,tflite_fp32,tflite_int8}.mp4
 # Example fp32 TFLite path:
 #   saved_models/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_saved_model/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_float32.tflite
 
 # --- Instance -> Mac (run on Mac, after steps 1-3 produce .mlmodel files) ---
 mkdir -p $LOCAL_VISIONAI/mmdeploy/tools \
-  $LOCAL_VISIONAI/mmpose/data/coco_ground_based_exercises_v6/annotations \
-  $LOCAL_VISIONAI/mmpose/data/coco_ground_based_exercises_v6/val2017
+  $LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations \
+  $LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017
 # CoreML models (fp32 baseline + int8; both required for step 4a val)
 rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}.mlmodel \
   $LOCAL_VISIONAI/mmdeploy/
@@ -58,10 +73,10 @@ rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/tools/coreml_export
   $LOCAL_VISIONAI/mmdeploy/tools/
 
 # Val annotations + images (large; one-time or when val set changes)
-rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmpose/data/coco_ground_based_exercises_v6/annotations/person_keypoints_val2017.json \
-  $LOCAL_VISIONAI/mmpose/data/coco_ground_based_exercises_v6/annotations/
-rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmpose/data/coco_ground_based_exercises_v6/val2017/ \
-  $LOCAL_VISIONAI/mmpose/data/coco_ground_based_exercises_v6/val2017/
+rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json \
+  $LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/
+rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017/ \
+  $LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017/
 
 # --- Mac -> Instance (run on Mac, after step 4a exports predictions) ---
 ssh visionai-gpu "mkdir -p $REMOTE_VISIONAI/mmdeploy/predictions"
@@ -115,11 +130,12 @@ python tools/coreml_export_val_predictions.py
 
 # 4b. Env: mmpose
 # See "File transfer" section: rsync predictions/*.keypoints.json Mac -> instance first
-# Compares AP from fp32 vs int8 CoreML predictions
+# Compares AP from fp32 vs int8 CoreML predictions; saves report to coreml_ap.txt
 conda activate mmpose
+export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
 cd ~/visionAI/mmdeploy
 ls -lh predictions/${MODEL_NAME}_fp32.keypoints.json predictions/${MODEL_NAME}_int8.keypoints.json
-python tools/compare_coco_ap.py
+python tools/compare_coco_ap.py | tee coreml_ap.txt
 
 # To convert rtmdet to CoreML:
 # 1. Env: mmdeploy
@@ -150,8 +166,9 @@ python tools/torchscript_to_onnx.py
 # onnx2tf writes SavedModel + fp32 TFLite into ./saved_model/; move both to saved_models/
 onnx2tf -i work_dir/${TFLITE_MODEL_NAME}/${TFLITE_MODEL_NAME}.onnx
 mv saved_model saved_models/${TFLITE_MODEL_NAME}_saved_model
-# Verify fp32 TFLite exists (required for step 5 baseline):
+# Verify fp32/fp16 TFLite exist (required for step 5 baseline + fp16 comparison):
 ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
+ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
 
 # 4. Env: model_conversion (same session)
 # Produces int8 TFLite in mmdeploy/ root only; does NOT create the fp32 .tflite above
@@ -160,11 +177,20 @@ python tools/tf_to_tflite.py
 # Verify int8 TFLite exists:
 ls -lh ${TFLITE_MODEL_NAME}_int8.tflite
 
-# 5. Env: model_conversion — compare coco/AP between fp32 and int8 TFLite models
+# 5. Env: mmpose — compare coco/AP between fp32, fp16, and int8 TFLite models
+# Needs mmcv/mmpose (this env) + ai-edge-litert for inference (one-time install above).
+# Uses ai_edge_litert.Interpreter (TF 2.19 int8 models need LiteRT, not tflite-runtime 2.14).
 # Expects fp32 at saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
+# Expects fp16 at saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
 # Expects int8 at ${TFLITE_MODEL_NAME}_int8.tflite
-# Update model AND data paths in script if needed, then run:
-python tools/tflite_compare_ap.py
+# Paths come from tools/model_paths.py; saves report to tflite_ap.txt
+conda deactivate && conda activate mmpose
+export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
+cd ~/visionAI/mmdeploy
+ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite \
+  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite \
+  ${TFLITE_MODEL_NAME}_int8.tflite
+python tools/tflite_compare_ap.py | tee tflite_ap.txt
 
 # =============================================================================
 # Validation overlays (instance only — run after steps 4b and 5)
@@ -174,15 +200,97 @@ python tools/tflite_compare_ap.py
 #   tflite_*  — live TFLite inference on instance
 # Output: overlays/${MODEL_NAME}/{coreml_fp32,coreml_int8,tflite_fp32,tflite_int8}/*.jpg
 # Colors: coreml_fp32=green, coreml_int8=orange, tflite_fp32=cyan, tflite_int8=magenta
-# One-time if cv2 missing in model_conversion: pip install opencv-python-headless
 
-# 6. Env: model_conversion — all four overlay variants on instance
-conda activate model_conversion
+# 6. Env: mmpose — all four overlay variants on instance (same env as step 5)
+conda activate mmpose
+export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
 cd ~/visionAI/mmdeploy
 ls -lh predictions/${MODEL_NAME}_fp32.keypoints.json predictions/${MODEL_NAME}_int8.keypoints.json
 python tools/overlay_val_models.py --variant all
 # Smoke test: python tools/overlay_val_models.py --variant all --max-images 20
 
+# 7. Env: mmpose — encode overlay frames to 10 fps MP4 (one per variant)
+# Input: overlays/${MODEL_NAME}/{variant}/*.jpg from step 6
+# Output: overlays/${MODEL_NAME}/videos/{variant}.mp4
+conda activate mmpose
+export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
+cd ~/visionAI/mmdeploy
+python tools/overlay_frames_to_video.py --variant all
+ls -lh overlays/${MODEL_NAME}/videos/
+
 # --- Instance -> Mac (optional: pull overlay images for local review) ---
 # rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/overlays/${MODEL_NAME}/ \
 #   $LOCAL_VISIONAI/mmdeploy/overlays/${MODEL_NAME}/
+
+# --- Instance -> Mac (pull overlay MP4s to Desktop) ---
+# On Mac (after step 7 on instance):
+# MODEL_NAME=rtmpose-m_merged_gbe_v9_gbe_app_vids_various_versions_sweep_merged_gbe_v9_app_vids_v4_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_lr1e-3
+# rsync -avz --progress visionai-gpu:/home/ubuntu/visionAI/mmdeploy/overlays/${MODEL_NAME}/videos/ \
+#   ~/Desktop/
+
+# =============================================================================
+# RTMPose-M pretrained -> TFLite (fp32 + int8)
+# =============================================================================
+# Weights: OpenMMLab rtmpose-m_simcc-aic-coco (same URL as finetune load_from in
+#   mmpose/configs/.../rtmpose-m_8xb256-420e_coco-256x192_finetune.py)
+# Checkpoint on instance: mmdeploy/mmpose/checkpoints/rtmpose-m_pretrained.pth
+# tools/model_paths.py is set to MODEL_NAME=rtmpose-m_pretrained for the steps below.
+#
+# Outputs (under mmdeploy/):
+#   saved_models/rtmpose-m_pretrained_saved_model/rtmpose-m_pretrained_float32.tflite  (fp32, from onnx2tf)
+#   saved_models/rtmpose-m_pretrained_saved_model/rtmpose-m_pretrained_float16.tflite (bonus fp16, from onnx2tf)
+#   rtmpose-m_pretrained_int8.tflite  (int8, from tf_to_tflite.py)
+
+MODEL_NAME=rtmpose-m_pretrained
+TFLITE_MODEL_NAME=${MODEL_NAME}
+
+# 1. Env: mmdeploy — TorchScript export
+conda activate mmdeploy
+cd ~/visionAI/mmdeploy
+ls -lh mmpose/checkpoints/${MODEL_NAME}.pth
+python tools/deploy.py \
+  configs/mmpose/pose-detection_simcc_coreml_static-256x192.py \
+  mmpose/configs/rtmpose-m_8xb256-420e_aic-coco-256x192.py \
+  mmpose/checkpoints/${MODEL_NAME}.pth \
+  ../mmpose/tests/data/coco/000000197388.jpg \
+  --work-dir work_dir/${MODEL_NAME} \
+  --device cpu \
+  --dump-info
+ls -lh work_dir/${MODEL_NAME}/end2end.pt
+
+# 2. Env: model_conversion — ONNX
+conda deactivate && conda activate model_conversion
+cd ~/visionAI/mmdeploy
+python tools/torchscript_to_onnx.py
+ls -lh work_dir/${MODEL_NAME}/${MODEL_NAME}.onnx
+
+# 3. Env: model_conversion — SavedModel + fp32/fp16 TFLite (onnx2tf)
+# Remove stale ./saved_model if re-running: rm -rf saved_model
+onnx2tf -i work_dir/${TFLITE_MODEL_NAME}/${TFLITE_MODEL_NAME}.onnx
+rm -rf saved_models/${TFLITE_MODEL_NAME}_saved_model
+mv saved_model saved_models/${TFLITE_MODEL_NAME}_saved_model
+ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
+ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
+
+# 4. Env: model_conversion — int8 TFLite (writes to mmdeploy/ root)
+python tools/tf_to_tflite.py
+ls -lh ${TFLITE_MODEL_NAME}_int8.tflite
+
+# --- Instance -> Mac: download fp32 + int8 TFLite to Desktop ---
+# On Mac:
+# MODEL_NAME=rtmpose-m_pretrained
+# rsync -avz --progress \
+#   visionai-gpu:/home/ubuntu/visionAI/mmdeploy/saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float32.tflite \
+#   visionai-gpu:/home/ubuntu/visionAI/mmdeploy/${MODEL_NAME}_int8.tflite \
+#   ~/Desktop/
+#
+# Optional fp16:
+# rsync -avz --progress \
+#   visionai-gpu:/home/ubuntu/visionAI/mmdeploy/saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float16.tflite \
+#   ~/Desktop/
+
+# --- Instance -> Mac (pull overlay MP4s to Desktop) ---
+# On Mac (after step 7 on instance):
+# MODEL_NAME=rtmpose-m_merged_gbe_v9_gbe_app_vids_various_versions_sweep_merged_gbe_v9_app_vids_v4_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_lr1e-3
+# rsync -avz --progress visionai-gpu:/home/ubuntu/visionAI/mmdeploy/overlays/${MODEL_NAME}/videos/ \
+#   ~/Desktop/
