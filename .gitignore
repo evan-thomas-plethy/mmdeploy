@@ -126,7 +126,10 @@ work_dir
 
 mmpose/checkpoints/
 mmdet/checkpoints/
+frontend-models/
 overlays/
+predictions/
+reports/
 
 # Pytorch
 *.pth

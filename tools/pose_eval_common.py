@@ -46,6 +46,72 @@ def compute_ap_from_predictions(ann_file, predictions):
     return {name: float(value) for name, value in zip(STATS_NAMES, coco_eval.stats)}
 
 
+def infer_precision_from_path(path):
+    """Infer fp32 / fp16 / int8 from model filename (no suffix => fp32)."""
+    stem = Path(path).stem.lower()
+    if '_int8' in stem or stem.endswith('int8'):
+        return 'int8'
+    if any(tag in stem for tag in ('_fp16', '_float16', 'float_16', 'float16')):
+        return 'fp16'
+    if any(tag in stem for tag in ('_float32', 'float_32', 'float32')):
+        return 'fp32'
+    return 'fp32'
+
+
+def column_labels_for_paths(paths):
+    """Assign unique table column labels from model/prediction paths."""
+    paths = [Path(p) for p in paths]
+    precisions = [infer_precision_from_path(p) for p in paths]
+    precision_counts = {}
+    for prec in precisions:
+        precision_counts[prec] = precision_counts.get(prec, 0) + 1
+
+    labels = {}
+    for path, prec in zip(paths, precisions):
+        labels[path] = prec if precision_counts[prec] == 1 else path.stem
+    return labels
+
+
+def infer_precision_from_meta_label(meta_value):
+    """Map meta.json checkpoint name to precision (no suffix => fp32)."""
+    return infer_precision_from_path(meta_value)
+
+
+def version_column_label(version_key, meta_value):
+    """Column label e.g. v1_int8 from meta.json version key + checkpoint name."""
+    return f'{version_key}_{infer_precision_from_meta_label(meta_value)}'
+
+
+def print_ap_comparison_table(
+        baseline_metrics,
+        variant_metrics_by_label,
+        baseline_label='fp32'):
+    """Print AP table: one baseline column plus variant columns and deltas."""
+    labels = list(variant_metrics_by_label)
+    header = f'{"Metric":<12} {baseline_label:>12}'
+    for label in labels:
+        header += f' {label:>12}'
+    for label in labels:
+        header += f' {"d" + label:>12}'
+    print(header)
+    print('-' * len(header))
+
+    for metric in baseline_metrics:
+        baseline_val = baseline_metrics[metric]
+        row = f'{metric:<12} {baseline_val:>12.4f}'
+        for label in labels:
+            row += f' {variant_metrics_by_label[label][metric]:>12.4f}'
+        for label in labels:
+            delta = variant_metrics_by_label[label][metric] - baseline_val
+            row += f' {delta:>+12.4f}'
+        print(row)
+
+    print('-' * len(header))
+    for label in labels:
+        ap_delta = variant_metrics_by_label[label]['AP'] - baseline_metrics['AP']
+        print(f'Primary coco/AP delta ({label} - {baseline_label}): {ap_delta:+.4f}')
+
+
 def print_ap_comparison(metrics_a, metrics_b, label_a='fp32', label_b='int8'):
     print('=' * 72)
     print('COCO AP comparison (same metric as training save_best=coco/AP)')

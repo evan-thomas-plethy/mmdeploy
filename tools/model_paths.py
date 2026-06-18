@@ -2,18 +2,15 @@
 
 from pathlib import Path
 
-# Finetuned v9 example (swap MODEL_NAME + VAL_DATA_DIRNAME):
-# MODEL_NAME = (
-#     'rtmpose-m_merged_gbe_v9_gbe_app_vids_various_versions_sweep_'
-#     'merged_gbe_v9_app_vids_v4_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_lr1e-3'
-# )
-# VAL_DATA_DIRNAME = (
-#     'merged_gbe_v9_gbe_app_vids_v4_lyingperson_full_infiniteform_seed4_n736'
-# )
-# VAL_DATA_DIRNAME = 'coco_ground_based_exercises_v6'
-
-MODEL_NAME = 'rtmpose-m_pretrained'
+MODEL_NAME = (
+    'rtmpose-m_merged_gbe_v9_gbe_app_vids_various_versions_sweep_'
+    'merged_gbe_v9_app_vids_v4_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_lr1e-3'
+)
 VAL_DATA_DIRNAME = 'merged_gbe_v9_gbe_app_vids_v4'
+
+# Pretrained example:
+# MODEL_NAME = 'rtmpose-m_pretrained'
+# VAL_DATA_DIRNAME = 'merged_gbe_v9_gbe_app_vids_v4'
 
 MMDEPLOY_WORK_DIR = f'work_dir/{MODEL_NAME}'
 
@@ -30,6 +27,7 @@ DEMO_IMAGE = MMPOSE_ROOT / 'tests/data/coco/000000197388.jpg'
 END2END_PT = REPO_ROOT / MMDEPLOY_WORK_DIR / 'end2end.pt'
 ONNX_MODEL = REPO_ROOT / MMDEPLOY_WORK_DIR / f'{MODEL_NAME}.onnx'
 FP32_MLMODEL = REPO_ROOT / f'{MODEL_NAME}.mlmodel'
+FP16_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_fp16.mlmodel'
 INT8_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_int8.mlmodel'
 SAVED_MODEL_DIR = REPO_ROOT / 'saved_models' / f'{MODEL_NAME}_saved_model'
 SAVED_MODEL_WITH_SIG_DIR = REPO_ROOT / 'saved_models' / f'{MODEL_NAME}_saved_model_with_signature'
@@ -37,9 +35,14 @@ FP32_TFLITE = SAVED_MODEL_DIR / f'{MODEL_NAME}_float32.tflite'
 FP16_TFLITE = SAVED_MODEL_DIR / f'{MODEL_NAME}_float16.tflite'
 INT8_TFLITE = REPO_ROOT / f'{MODEL_NAME}_int8.tflite'
 
+PREDICTIONS_DIR = REPO_ROOT / 'predictions'
+TFLITE_FP32_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_tflite_fp32.keypoints.json'
+TFLITE_FP16_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_tflite_fp16.keypoints.json'
+TFLITE_INT8_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_tflite_int8.keypoints.json'
+
 ANN_FILE = VAL_DATA_ROOT / 'annotations/person_keypoints_val2017.json'
 IMG_PREFIX = VAL_DATA_ROOT / 'val2017'
-PREDICTIONS_DIR = REPO_ROOT / 'predictions'
 FP32_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_fp32.keypoints.json'
+FP16_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_fp16.keypoints.json'
 INT8_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_int8.keypoints.json'
 OVERLAYS_DIR = REPO_ROOT / 'overlays' / MODEL_NAME

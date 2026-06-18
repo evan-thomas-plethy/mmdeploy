@@ -45,6 +45,7 @@ REMOTE_VISIONAI=/home/ubuntu/visionAI
 #   Val annotations:                     mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 #   Val images:                          mmpose/data/${VAL_DATA_DIRNAME}/val2017/
 #   CoreML fp32 (baseline for step 4a):  ${MODEL_NAME}.mlmodel
+#   CoreML fp16:                         ${MODEL_NAME}_fp16.mlmodel
 #   CoreML int8:                         ${MODEL_NAME}_int8.mlmodel
 #   TFLite fp32 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
 #   TFLite fp16 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
@@ -63,7 +64,8 @@ mkdir -p $LOCAL_VISIONAI/mmdeploy/tools \
 # CoreML models (fp32 baseline + int8; both required for step 4a val)
 rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}.mlmodel \
   $LOCAL_VISIONAI/mmdeploy/
-rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_int8.mlmodel \
+rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_fp16.mlmodel \
+  visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_int8.mlmodel \
   $LOCAL_VISIONAI/mmdeploy/
 
 # Val scripts (lightweight; only needed once or after script changes)
@@ -118,23 +120,25 @@ ls -lh ${MODEL_NAME}.mlmodel
 # 3. Env: model_conversion (same session)
 # Update model paths in script if needed, then run:
 python tools/coreml_weight_quantize.py
-# Verify both CoreML models exist (fp32 is baseline for step 4a):
-ls -lh ${MODEL_NAME}.mlmodel ${MODEL_NAME}_int8.mlmodel
+# Verify CoreML models exist (fp32 baseline + fp16 + int8 for step 4a):
+ls -lh ${MODEL_NAME}.mlmodel ${MODEL_NAME}_fp16.mlmodel ${MODEL_NAME}_int8.mlmodel
 
 # 4a. On Mac only (no conda env; deps: coremltools, opencv-python, pillow, numpy)
 # See "File transfer" section: rsync fp32 + int8 .mlmodel, val data + scripts instance -> Mac first
-# Runs inference on BOTH ${MODEL_NAME}.mlmodel (fp32 baseline) and ${MODEL_NAME}_int8.mlmodel
+# Runs inference on ${MODEL_NAME}.mlmodel (fp32), ${MODEL_NAME}_fp16.mlmodel, and ${MODEL_NAME}_int8.mlmodel
 # Pre/post matches production iOS CoreML pipeline
 # Update model AND data paths in script if needed, then run from mmdeploy/ on Mac:
 python tools/coreml_export_val_predictions.py
 
 # 4b. Env: mmpose
 # See "File transfer" section: rsync predictions/*.keypoints.json Mac -> instance first
-# Compares AP from fp32 vs int8 CoreML predictions; saves report to coreml_ap.txt
+# Compares AP from fp32 vs fp16 vs int8 CoreML predictions; saves report to coreml_ap.txt
 conda activate mmpose
 export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
 cd ~/visionAI/mmdeploy
-ls -lh predictions/${MODEL_NAME}_fp32.keypoints.json predictions/${MODEL_NAME}_int8.keypoints.json
+ls -lh predictions/${MODEL_NAME}_fp32.keypoints.json \
+  predictions/${MODEL_NAME}_fp16.keypoints.json \
+  predictions/${MODEL_NAME}_int8.keypoints.json
 python tools/compare_coco_ap.py | tee coreml_ap.txt
 
 # To convert rtmdet to CoreML:
@@ -288,6 +292,88 @@ ls -lh ${TFLITE_MODEL_NAME}_int8.tflite
 # rsync -avz --progress \
 #   visionai-gpu:/home/ubuntu/visionAI/mmdeploy/saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float16.tflite \
 #   ~/Desktop/
+
+# =============================================================================
+# RTMPose-M pretrained — CoreML fp16 on coco_general_val (fp32 vs fp16 AP)
+# =============================================================================
+# Prereq on instance: rtmpose-m_pretrained.mlmodel (fp32 CoreML export exists).
+# Val set: coco_general_val (general_val.json + general_val/ images).
+# fp32 baseline predictions may already exist at:
+#   predictions/coco_general_val/ios_pretrained_v1_fp32.keypoints.json
+#   (same rtmpose-m_pretrained weights as frontend-models iOS v1)
+
+PRETRAINED_MODEL_NAME=rtmpose-m_pretrained
+GENERAL_VAL_DIRNAME=coco_general_val
+GENERAL_VAL_ANN=${REMOTE_VISIONAI}/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations/general_val.json
+GENERAL_VAL_IMG=${REMOTE_VISIONAI}/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val
+PRED_GENERAL_VAL=${REMOTE_VISIONAI}/mmdeploy/predictions/coco_general_val
+REPORT_GENERAL_VAL=${REMOTE_VISIONAI}/mmdeploy/reports/coco_general_val
+
+# --- Instance: quantize fp32 CoreML -> fp16 (and optionally int8) ---
+# Does not require editing tools/model_paths.py.
+conda activate model_conversion
+cd ~/visionAI/mmdeploy
+ls -lh ${PRETRAINED_MODEL_NAME}.mlmodel
+python tools/coreml_weight_quantize.py \
+  --fp32 ${PRETRAINED_MODEL_NAME}.mlmodel \
+  --variants fp16
+ls -lh ${PRETRAINED_MODEL_NAME}_fp16.mlmodel
+
+# --- Instance -> Mac: fp32 + fp16 CoreML, val data, scripts ---
+# On Mac:
+# mkdir -p $LOCAL_VISIONAI/mmdeploy/predictions/coco_general_val \
+#   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations \
+#   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val
+# rsync -avz --progress \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}.mlmodel \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}_fp16.mlmodel \
+#   $LOCAL_VISIONAI/mmdeploy/
+# rsync -avz --progress \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/tools/coreml_export_val_predictions.py \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/tools/rtmpose_coreml_utils.py \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/tools/pose_eval_common.py \
+#   $LOCAL_VISIONAI/mmdeploy/tools/
+# rsync -avz --progress \
+#   visionai-gpu:$REMOTE_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations/general_val.json \
+#   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations/
+# rsync -avz --progress \
+#   visionai-gpu:$REMOTE_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val/ \
+#   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val/
+
+# --- Mac: export fp16 predictions on coco_general_val (step 4a) ---
+# cd $LOCAL_VISIONAI/mmdeploy
+# ANN_FILE=$LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations/general_val.json
+# IMG_PREFIX=$LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val
+# PRED_DIR=$LOCAL_VISIONAI/mmdeploy/predictions/coco_general_val
+# python tools/coreml_export_val_predictions.py \
+#   --models ${PRETRAINED_MODEL_NAME}_fp16.mlmodel \
+#   --ann-file $ANN_FILE \
+#   --img-prefix $IMG_PREFIX \
+#   --predictions-dir $PRED_DIR \
+#   --output $PRED_DIR/ios_pretrained_fp16.keypoints.json
+# Optional: re-export fp32 from same .mlmodel (instead of reusing ios_pretrained_v1_fp32):
+# python tools/coreml_export_val_predictions.py \
+#   --models ${PRETRAINED_MODEL_NAME}.mlmodel \
+#   --ann-file $ANN_FILE --img-prefix $IMG_PREFIX --predictions-dir $PRED_DIR \
+#   --output $PRED_DIR/ios_pretrained_fp32.keypoints.json
+
+# --- Mac -> Instance: rsync fp16 predictions ---
+# rsync -avz --progress \
+#   $LOCAL_VISIONAI/mmdeploy/predictions/coco_general_val/ios_pretrained_fp16.keypoints.json \
+#   visionai-gpu:$PRED_GENERAL_VAL/
+
+# --- Instance: compare fp32 vs fp16 on coco_general_val ---
+conda activate mmpose
+export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
+cd ~/visionAI/mmdeploy
+mkdir -p reports/coco_general_val
+ANN_FILE=/home/ubuntu/visionAI/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations/general_val.json
+python tools/frontend_models_compare_ap.py \
+  --predictions \
+    predictions/coco_general_val/ios_pretrained_v1_fp32.keypoints.json \
+    predictions/coco_general_val/ios_pretrained_fp16.keypoints.json \
+  --ann-file $ANN_FILE \
+  | tee reports/coco_general_val/ap_ios_pretrained_fp32_vs_fp16.txt
 
 # --- Instance -> Mac (pull overlay MP4s to Desktop) ---
 # On Mac (after step 7 on instance):

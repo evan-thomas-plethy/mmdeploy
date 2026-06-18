@@ -1,5 +1,6 @@
 """Export COCO val predictions from CoreML models on macOS (no mmpose deps)."""
 
+import argparse
 import json
 import platform
 import sys
@@ -25,17 +26,30 @@ from rtmpose_coreml_utils import (
 
 from model_paths import (
     ANN_FILE,
+    FP16_MLMODEL,
+    FP16_PREDICTIONS,
     FP32_MLMODEL,
     FP32_PREDICTIONS,
     IMG_PREFIX,
     INT8_MLMODEL,
     INT8_PREDICTIONS,
+    PREDICTIONS_DIR,
     VAL_DATA_ROOT,
 )
+from pose_eval_common import infer_precision_from_path
 
 
 def _bbox_xywh_from_xyxy(x1, y1, x2, y2):
     return [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
+
+
+def _default_output_path(model_path, predictions_dir):
+    """Match model_paths naming: fp32 => {stem}_fp32.keypoints.json."""
+    model_path = Path(model_path)
+    out_dir = Path(predictions_dir)
+    if infer_precision_from_path(model_path) == 'fp32':
+        return out_dir / f'{model_path.stem}_fp32.keypoints.json'
+    return out_dir / f'{model_path.stem}.keypoints.json'
 
 
 def _load_coco_dataset(ann_file):
@@ -121,25 +135,81 @@ def main():
         )
         sys.exit(1)
 
-    if not ANN_FILE.exists() or not IMG_PREFIX.exists():
+    parser = argparse.ArgumentParser(
+        description='Export COCO val predictions from CoreML models.')
+    parser.add_argument(
+        '--models',
+        nargs='+',
+        type=Path,
+        metavar='PATH',
+        help='CoreML .mlmodel paths. Defaults to model_paths fp32/fp16/int8.',
+    )
+    parser.add_argument(
+        '--max-samples',
+        type=int,
+        default=None,
+        help='Limit val annotations.',
+    )
+    parser.add_argument(
+        '--ann-file',
+        type=Path,
+        default=ANN_FILE,
+        help='COCO val annotations JSON.',
+    )
+    parser.add_argument(
+        '--img-prefix',
+        type=Path,
+        default=IMG_PREFIX,
+        help='Val images directory.',
+    )
+    parser.add_argument(
+        '--predictions-dir',
+        type=Path,
+        default=PREDICTIONS_DIR,
+        help='Directory for exported prediction JSONs.',
+    )
+    parser.add_argument(
+        '--output',
+        nargs='+',
+        type=Path,
+        metavar='PATH',
+        help='Output JSON per model (same order as --models).',
+    )
+    args = parser.parse_args()
+
+    if not args.ann_file.exists() or not args.img_prefix.exists():
         print(f'ERROR: Val data not found under {VAL_DATA_ROOT}', file=sys.stderr)
         sys.exit(1)
 
-    max_samples = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    if max_samples is not None:
-        print(f'Running on first {max_samples} annotations only')
+    if args.models:
+        model_paths = list(args.models)
+        if args.output and len(args.output) != len(model_paths):
+            print('ERROR: --output count must match --models', file=sys.stderr)
+            sys.exit(1)
+        output_paths = (
+            list(args.output)
+            if args.output
+            else [_default_output_path(p, args.predictions_dir) for p in model_paths]
+        )
+    else:
+        model_paths = [FP32_MLMODEL, FP16_MLMODEL, INT8_MLMODEL]
+        output_paths = [FP32_PREDICTIONS, FP16_PREDICTIONS, INT8_PREDICTIONS]
 
-    models = [
-        (FP32_MLMODEL, FP32_PREDICTIONS),
-        (INT8_MLMODEL, INT8_PREDICTIONS),
-    ]
-    for model_path, output_path in models:
+    if args.max_samples is not None:
+        print(f'Running on first {args.max_samples} annotations only')
+
+    for model_path, output_path in zip(model_paths, output_paths):
         if not model_path.exists():
             print(f'ERROR: Model not found: {model_path}', file=sys.stderr)
             sys.exit(1)
-        print(f'Exporting predictions for {model_path.name}...')
+        print(f'Exporting predictions for {model_path.name} -> {output_path}')
         export_predictions(
-            model_path, ANN_FILE, IMG_PREFIX, output_path, max_samples=max_samples)
+            model_path,
+            args.ann_file,
+            args.img_prefix,
+            output_path,
+            max_samples=args.max_samples,
+        )
 
 
 if __name__ == '__main__':

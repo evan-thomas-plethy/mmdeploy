@@ -1,6 +1,6 @@
+import argparse
 import json
 import sys
-import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -27,7 +27,12 @@ from model_paths import (
     IMG_PREFIX,
     INT8_TFLITE,
     MMPOSE_ROOT,
+    PREDICTIONS_DIR,
+    TFLITE_FP16_PREDICTIONS,
+    TFLITE_FP32_PREDICTIONS,
+    TFLITE_INT8_PREDICTIONS,
 )
+from pose_eval_common import compute_ap_from_predictions, print_ap_comparison_table
 
 INPUT_SIZE = (192, 256)  # (w, h), matches training codec input_size
 SIMCC_SPLIT_RATIO = 2.0
@@ -170,14 +175,36 @@ def _format_coco_predictions(instances_by_image):
     return results
 
 
+def tflite_predictions_path(model_path, ann_file, max_samples=None, predictions_dir=None):
+    """Stable cache path under predictions/ for a TFLite model + val set."""
+    out_dir = Path(predictions_dir or PREDICTIONS_DIR)
+    ann_tag = Path(ann_file).stem
+    model_tag = Path(model_path).stem.replace('.', '_')
+    name = f'tflite_{model_tag}_{ann_tag}'
+    if max_samples is not None:
+        name += f'_n{max_samples}'
+    return out_dir / f'{name}.keypoints.json'
+
+
 def evaluate_model(model_path, ann_file, img_prefix, get_simcc_maximum, oks_nms,
-                   bbox_xyxy2cs, get_warp_matrix, max_samples=None):
+                   bbox_xyxy2cs, get_warp_matrix, max_samples=None,
+                   predictions_path=None, force_rerun=False):
+    if predictions_path is None:
+        predictions_path = tflite_predictions_path(
+            model_path, ann_file, max_samples=max_samples)
+    else:
+        predictions_path = Path(predictions_path)
+
+    if predictions_path.exists() and not force_rerun:
+        print(f'Using cached predictions: {predictions_path}')
+        with open(predictions_path) as f:
+            coco_predictions = json.load(f)
+        return compute_ap_from_predictions(ann_file, coco_predictions)
+
     try:
         from xtcocotools.coco import COCO
-        from xtcocotools.cocoeval import COCOeval
     except ImportError:
         from pycocotools.coco import COCO
-        from pycocotools.cocoeval import COCOeval
 
     interpreter = _load_interpreter(model_path)
     input_detail = interpreter.get_input_details()[0]
@@ -268,102 +295,123 @@ def evaluate_model(model_path, ann_file, img_prefix, get_simcc_maximum, oks_nms,
             filtered_by_image[img_id].append(nms_input[int(idx)])
 
     coco_predictions = _format_coco_predictions(filtered_by_image)
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    predictions_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(predictions_path, 'w') as f:
         json.dump(coco_predictions, f)
-        pred_file = f.name
+    print(f'Saved predictions to {predictions_path}')
 
-    coco_dt = coco.loadRes(pred_file)
-    coco_eval = COCOeval(coco, coco_dt, 'keypoints', COCO_SIGMAS, True)
-    coco_eval.params.useSegm = None
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    coco_eval.summarize()
-
-    Path(pred_file).unlink(missing_ok=True)
-
-    stats_names = [
-        'AP', 'AP .5', 'AP .75', 'AP (M)', 'AP (L)', 'AR', 'AR .5',
-        'AR .75', 'AR (M)', 'AR (L)'
-    ]
-    return {name: float(value) for name, value in zip(stats_names, coco_eval.stats)}
-
-
-def _print_comparison_table(baseline_metrics, variant_metrics_by_label):
-    labels = list(variant_metrics_by_label)
-    header = f'{"Metric":<12} {"fp32":>12}'
-    for label in labels:
-        header += f' {label:>12}'
-    for label in labels:
-        header += f' {"d" + label:>12}'
-    print(header)
-    print('-' * len(header))
-
-    for metric in baseline_metrics:
-        fp32_val = baseline_metrics[metric]
-        row = f'{metric:<12} {fp32_val:>12.4f}'
-        for label in labels:
-            row += f' {variant_metrics_by_label[label][metric]:>12.4f}'
-        for label in labels:
-            delta = variant_metrics_by_label[label][metric] - fp32_val
-            row += f' {delta:>+12.4f}'
-        print(row)
-
-    print('-' * len(header))
-    for label in labels:
-        ap_delta = variant_metrics_by_label[label]['AP'] - baseline_metrics['AP']
-        print(f'Primary coco/AP delta ({label} - fp32): {ap_delta:+.4f}')
+    return compute_ap_from_predictions(ann_file, coco_predictions)
 
 
 def main():
-    get_simcc_maximum, oks_nms, bbox_xyxy2cs, get_warp_matrix = _setup_mmpose_imports()
+    parser = argparse.ArgumentParser(
+        description='Run TFLite val inference and compare COCO AP across models.')
+    parser.add_argument(
+        '--models',
+        nargs='+',
+        type=Path,
+        metavar='PATH',
+        help='TFLite model paths (first = baseline). Defaults to model_paths fp32/fp16/int8.',
+    )
+    parser.add_argument(
+        '--max-samples',
+        type=int,
+        default=None,
+        help='Limit val annotations.',
+    )
+    parser.add_argument(
+        '--ann-file',
+        type=Path,
+        default=ANN_FILE,
+        help='COCO val annotations JSON.',
+    )
+    parser.add_argument(
+        '--img-prefix',
+        type=Path,
+        default=IMG_PREFIX,
+        help='Val images directory.',
+    )
+    parser.add_argument(
+        '--predictions-dir',
+        type=Path,
+        default=PREDICTIONS_DIR,
+        help='Directory for cached prediction JSONs.',
+    )
+    parser.add_argument(
+        '--force-rerun',
+        action='store_true',
+        help='Re-run inference even if prediction JSON exists.',
+    )
+    args = parser.parse_args()
 
-    fp32_path = FP32_TFLITE
-    fp16_path = FP16_TFLITE
-    int8_path = INT8_TFLITE
+    if args.models:
+        model_paths = list(args.models)
+        pred_paths = [
+            tflite_predictions_path(
+                p, args.ann_file, max_samples=args.max_samples,
+                predictions_dir=args.predictions_dir)
+            for p in model_paths
+        ]
+    else:
+        model_paths = [FP32_TFLITE, FP16_TFLITE, INT8_TFLITE]
+        pred_paths = [
+            TFLITE_FP32_PREDICTIONS,
+            TFLITE_FP16_PREDICTIONS,
+            TFLITE_INT8_PREDICTIONS,
+        ]
 
-    required_paths = (fp32_path, fp16_path, int8_path, ANN_FILE, IMG_PREFIX)
+    required_paths = (*model_paths, args.ann_file, args.img_prefix)
     for path in required_paths:
         if not path.exists():
             print(f'ERROR: Required path not found: {path}', file=sys.stderr)
             sys.exit(1)
 
-    max_samples = None
-    if len(sys.argv) > 1:
-        max_samples = int(sys.argv[1])
-        print(f'Running on first {max_samples} annotations only')
+    if args.max_samples is not None:
+        print(f'Running on first {args.max_samples} annotations only')
 
-    print(f'Annotation file: {ANN_FILE}')
-    print(f'Image prefix: {IMG_PREFIX}')
+    from pose_eval_common import column_labels_for_paths
+
+    labels = column_labels_for_paths(model_paths)
+    get_simcc_maximum, oks_nms, bbox_xyxy2cs, get_warp_matrix = _setup_mmpose_imports()
+
+    print(f'Annotation file: {args.ann_file}')
+    print(f'Image prefix: {args.img_prefix}')
     print()
 
     eval_kwargs = dict(
-        ann_file=ANN_FILE,
-        img_prefix=IMG_PREFIX,
+        ann_file=args.ann_file,
+        img_prefix=args.img_prefix,
         get_simcc_maximum=get_simcc_maximum,
         oks_nms=oks_nms,
         bbox_xyxy2cs=bbox_xyxy2cs,
         get_warp_matrix=get_warp_matrix,
-        max_samples=max_samples,
+        max_samples=args.max_samples,
+        force_rerun=args.force_rerun,
     )
 
-    print(f'Evaluating fp32 model: {fp32_path}')
-    fp32_metrics = evaluate_model(fp32_path, **eval_kwargs)
-    print()
+    metrics = {}
+    for model_path, pred_path in zip(model_paths, pred_paths):
+        label = labels[model_path]
+        print(f'Evaluating {label} model: {model_path}')
+        metrics[label] = evaluate_model(
+            model_path, predictions_path=pred_path, **eval_kwargs)
+        print()
 
-    print(f'Evaluating fp16 model: {fp16_path}')
-    fp16_metrics = evaluate_model(fp16_path, **eval_kwargs)
-    print()
-
-    print(f'Evaluating int8 model: {int8_path}')
-    int8_metrics = evaluate_model(int8_path, **eval_kwargs)
-    print()
+    baseline_path = model_paths[0]
+    baseline_label = labels[baseline_path]
+    variant_metrics = {
+        label: metrics[label]
+        for path, label in labels.items()
+        if path != baseline_path
+    }
 
     print('=' * 96)
     print('COCO AP comparison (same metric as training save_best=coco/AP)')
     print('=' * 96)
-    _print_comparison_table(
-        fp32_metrics,
-        {'fp16': fp16_metrics, 'int8': int8_metrics},
+    print_ap_comparison_table(
+        metrics[baseline_label],
+        variant_metrics,
+        baseline_label=baseline_label,
     )
 
 
