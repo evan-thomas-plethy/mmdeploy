@@ -46,7 +46,7 @@ REMOTE_VISIONAI=/home/ubuntu/visionAI
 #   Val annotations:                     mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 #   Val images:                          mmpose/data/${VAL_DATA_DIRNAME}/val2017/
 #   CoreML fp32 (baseline for step 4a):  ${MODEL_NAME}.mlmodel
-#   CoreML fp16:                         ${MODEL_NAME}_fp16.mlmodel
+#   CoreML float16:                      ${MODEL_NAME}_float16.mlmodel
 #   CoreML int8:                         ${MODEL_NAME}_int8.mlmodel
 #   TFLite fp32 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
 #   TFLite fp16 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
@@ -66,7 +66,7 @@ mkdir -p $LOCAL_VISIONAI/mmdeploy/tools \
 # CoreML models; required for step 4a val
 rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}.mlmodel \
   $LOCAL_VISIONAI/mmdeploy/
-rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_fp16.mlmodel \
+rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float16.mlmodel \
   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_int8.mlmodel \
   $LOCAL_VISIONAI/mmdeploy/
 
@@ -124,7 +124,7 @@ ls -lh ${MODEL_NAME}.mlmodel
 # Update model paths in script if needed, then run:
 python tools/coreml_weight_quantize.py
 # Verify CoreML models exist (fp32 baseline + fp16 + int8 for step 4a):
-ls -lh ${MODEL_NAME}.mlmodel ${MODEL_NAME}_fp16.mlmodel ${MODEL_NAME}_int8.mlmodel
+ls -lh ${MODEL_NAME}.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}_int8.mlmodel
 
 # 4a. On Mac only (no conda env; deps: coremltools, opencv-python, pillow, numpy)
 # See "File transfer" section: rsync fp32 + int8 .mlmodel, val data + scripts instance -> Mac first
@@ -134,7 +134,7 @@ cd $LOCAL_VISIONAI/mmdeploy
 VAL_ANN=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 VAL_IMG=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017
 python tools/coreml_export_val_predictions.py \
-  --models ${MODEL_NAME}.mlmodel ${MODEL_NAME}_fp16.mlmodel ${MODEL_NAME}_int8.mlmodel \
+  --models ${MODEL_NAME}.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}_int8.mlmodel \
   --ann-file ${VAL_ANN} \
   --img-prefix ${VAL_IMG}
 
@@ -148,7 +148,7 @@ VAL_ANN=/home/ubuntu/visionAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person
 python tools/coreml_compare_ap.py \
   --predictions \
     predictions/coreml_${MODEL_NAME}_${VAL_DATA_DIRNAME}.keypoints.json \
-    predictions/coreml_${MODEL_NAME}_fp16_${VAL_DATA_DIRNAME}.keypoints.json \
+    predictions/coreml_${MODEL_NAME}_float16_${VAL_DATA_DIRNAME}.keypoints.json \
   --ann-file ${VAL_ANN}
 
 # To convert rtmdet to CoreML:
@@ -338,7 +338,7 @@ ls -lh ${PRETRAINED_MODEL_NAME}.mlmodel
 python tools/coreml_weight_quantize.py \
   --fp32 ${PRETRAINED_MODEL_NAME}.mlmodel \
   --variants fp16
-ls -lh ${PRETRAINED_MODEL_NAME}_fp16.mlmodel
+ls -lh ${PRETRAINED_MODEL_NAME}_float16.mlmodel
 
 # --- Instance -> Mac: fp32 + fp16 CoreML, val data, scripts ---
 # On Mac:
@@ -347,7 +347,7 @@ ls -lh ${PRETRAINED_MODEL_NAME}_fp16.mlmodel
 #   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val
 # rsync -avz --progress \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}.mlmodel \
-#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}_fp16.mlmodel \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}_float16.mlmodel \
 #   $LOCAL_VISIONAI/mmdeploy/
 # rsync -avz --progress \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/tools/coreml_export_val_predictions.py \
@@ -367,7 +367,7 @@ ls -lh ${PRETRAINED_MODEL_NAME}_fp16.mlmodel
 # IMG_PREFIX=$LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val
 # PRED_DIR=$LOCAL_VISIONAI/mmdeploy/predictions/coco_general_val
 # python tools/coreml_export_val_predictions.py \
-#   --models ${PRETRAINED_MODEL_NAME}_fp16.mlmodel \
+#   --models ${PRETRAINED_MODEL_NAME}_float16.mlmodel \
 #   --ann-file $ANN_FILE \
 #   --img-prefix $IMG_PREFIX \
 #   --predictions-dir $PRED_DIR

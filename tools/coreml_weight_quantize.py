@@ -22,7 +22,7 @@ VARIANT_SPECS = {
 def _output_path(fp32_path, variant):
     fp32_path = Path(fp32_path)
     if variant == 'fp16':
-        return fp32_path.with_name(f'{fp32_path.stem}_fp16{fp32_path.suffix}')
+        return fp32_path.with_name(f'{fp32_path.stem}_float16{fp32_path.suffix}')
     return fp32_path.with_name(f'{fp32_path.stem}_int8{fp32_path.suffix}')
 
 
@@ -46,7 +46,7 @@ def main():
         '--fp16',
         type=Path,
         default=None,
-        help='Output fp16 path (default: {fp32_stem}_fp16.mlmodel).',
+        help='Output fp16 path (default: {fp32_stem}_float16.mlmodel).',
     )
     parser.add_argument(
         '--int8',

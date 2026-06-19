@@ -27,7 +27,7 @@ DEMO_IMAGE = MMPOSE_ROOT / 'tests/data/coco/000000197388.jpg'
 END2END_PT = REPO_ROOT / MMDEPLOY_WORK_DIR / 'end2end.pt'
 ONNX_MODEL = REPO_ROOT / MMDEPLOY_WORK_DIR / f'{MODEL_NAME}.onnx'
 FP32_MLMODEL = REPO_ROOT / f'{MODEL_NAME}.mlmodel'
-FP16_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_fp16.mlmodel'
+FP16_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_float16.mlmodel'
 INT8_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_int8.mlmodel'
 SAVED_MODEL_DIR = REPO_ROOT / 'saved_models' / f'{MODEL_NAME}_saved_model'
 SAVED_MODEL_WITH_SIG_DIR = REPO_ROOT / 'saved_models' / f'{MODEL_NAME}_saved_model_with_signature'
@@ -48,7 +48,7 @@ IMG_PREFIX = VAL_DATA_ROOT / 'val2017'
 FP32_PREDICTIONS = (
     PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_{VAL_DATA_DIRNAME}.keypoints.json')
 FP16_PREDICTIONS = (
-    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_fp16_{VAL_DATA_DIRNAME}.keypoints.json')
+    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_float16_{VAL_DATA_DIRNAME}.keypoints.json')
 INT8_PREDICTIONS = (
     PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_int8_{VAL_DATA_DIRNAME}.keypoints.json')
 AP_COREML_REPORT = REPO_ROOT / 'reports' / 'ap_coreml.txt'
