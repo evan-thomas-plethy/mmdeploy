@@ -1,4 +1,4 @@
-"""Compare COCO AP from two exported TFLite keypoints prediction JSON files."""
+"""Compare COCO AP from two exported CoreML keypoints prediction JSON files."""
 
 import argparse
 import sys
@@ -8,13 +8,13 @@ TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-from model_paths import ANN_FILE, AP_TFLITE_REPORT
+from model_paths import ANN_FILE, AP_COREML_REPORT
 from pose_eval_common import compare_two_predictions_to_report
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Compare COCO AP from two exported TFLite prediction JSONs.')
+        description='Compare COCO AP from two exported CoreML prediction JSONs.')
     parser.add_argument(
         '--predictions',
         nargs=2,
@@ -34,8 +34,8 @@ def main():
     compare_two_predictions_to_report(
         args.ann_file,
         args.predictions,
-        AP_TFLITE_REPORT,
-        'tools/tflite_export_val_predictions.py',
+        AP_COREML_REPORT,
+        'tools/coreml_export_val_predictions.py',
     )
 
 

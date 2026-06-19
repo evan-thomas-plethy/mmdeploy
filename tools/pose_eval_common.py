@@ -1,6 +1,8 @@
 import json
 import sys
 import tempfile
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +46,44 @@ def compute_ap_from_predictions(ann_file, predictions):
 
     Path(pred_file).unlink(missing_ok=True)
     return {name: float(value) for name, value in zip(STATS_NAMES, coco_eval.stats)}
+
+
+def sanitize_path_tag(name):
+    """Normalize a path component for use in prediction filenames."""
+    return str(name).replace('.', '_').replace(' ', '_')
+
+
+def infer_dataset_name(ann_file, dataset_name=None):
+    """Derive dataset tag from --dataset-name or val annotation layout."""
+    if dataset_name:
+        return sanitize_path_tag(dataset_name)
+    ann_path = Path(ann_file)
+    if ann_path.parent.name == 'annotations':
+        return sanitize_path_tag(ann_path.parent.parent.name)
+    return sanitize_path_tag(ann_path.stem)
+
+
+def predictions_output_path(
+    backend,
+    model_path,
+    ann_file,
+    predictions_dir=None,
+    dataset_name=None,
+    max_samples=None,
+):
+    """Build predictions/{backend}_{model}_{dataset}.keypoints.json."""
+    backend = backend.lower()
+    if backend not in ('coreml', 'tflite'):
+        raise ValueError(f'backend must be coreml or tflite, got {backend!r}')
+    from model_paths import PREDICTIONS_DIR
+
+    model_tag = sanitize_path_tag(Path(model_path).stem)
+    dataset_tag = infer_dataset_name(ann_file, dataset_name)
+    filename = f'{backend}_{model_tag}_{dataset_tag}'
+    if max_samples is not None:
+        filename += f'_n{max_samples}'
+    out_dir = Path(predictions_dir) if predictions_dir is not None else PREDICTIONS_DIR
+    return out_dir / f'{filename}.keypoints.json'
 
 
 def infer_precision_from_path(path):
@@ -127,3 +167,57 @@ def print_ap_comparison(metrics_a, metrics_b, label_a='fp32', label_b='int8'):
     ap_delta = metrics_b['AP'] - metrics_a['AP']
     print('-' * 72)
     print(f'Primary coco/AP delta ({label_b} - {label_a}): {ap_delta:+.4f}')
+
+
+def compare_two_predictions_to_report(
+    ann_file,
+    prediction_paths,
+    report_path,
+    export_script_hint,
+):
+    """Compare exactly two prediction JSONs; print and overwrite report_path."""
+    prediction_paths = [Path(p) for p in prediction_paths]
+    if len(prediction_paths) != 2:
+        raise ValueError('Exactly two --predictions paths are required')
+
+    for path in prediction_paths:
+        if not path.exists():
+            raise FileNotFoundError(
+                f'Predictions not found: {path}. Run {export_script_hint} first.')
+
+    labels = column_labels_for_paths(prediction_paths)
+    buffer = StringIO()
+    with redirect_stdout(buffer):
+        print(f'Annotation file: {ann_file}')
+        for path in prediction_paths:
+            print(f'{labels[path]} predictions: {path}')
+        print()
+
+        metrics = {}
+        for path in prediction_paths:
+            label = labels[path]
+            print(f'Computing AP for {label} predictions...')
+            with open(path) as f:
+                preds = json.load(f)
+            metrics[label] = compute_ap_from_predictions(ann_file, preds)
+            print()
+
+        baseline_path = prediction_paths[0]
+        baseline_label = labels[baseline_path]
+        variant_label = labels[prediction_paths[1]]
+
+        print('=' * 96)
+        print('COCO AP comparison (same metric as training save_best=coco/AP)')
+        print('=' * 96)
+        print_ap_comparison_table(
+            metrics[baseline_label],
+            {variant_label: metrics[variant_label]},
+            baseline_label=baseline_label,
+        )
+
+    report = buffer.getvalue()
+    sys.stdout.write(report)
+    report_path = Path(report_path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report)
+    print(f'Wrote report to {report_path}', file=sys.stderr)

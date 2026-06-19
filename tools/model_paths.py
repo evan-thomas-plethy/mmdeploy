@@ -36,13 +36,21 @@ FP16_TFLITE = SAVED_MODEL_DIR / f'{MODEL_NAME}_float16.tflite'
 INT8_TFLITE = REPO_ROOT / f'{MODEL_NAME}_int8.tflite'
 
 PREDICTIONS_DIR = REPO_ROOT / 'predictions'
-TFLITE_FP32_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_tflite_fp32.keypoints.json'
-TFLITE_FP16_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_tflite_fp16.keypoints.json'
-TFLITE_INT8_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_tflite_int8.keypoints.json'
+TFLITE_FP32_PREDICTIONS = (
+    PREDICTIONS_DIR / f'tflite_{MODEL_NAME}_float32_{VAL_DATA_DIRNAME}.keypoints.json')
+TFLITE_FP16_PREDICTIONS = (
+    PREDICTIONS_DIR / f'tflite_{MODEL_NAME}_float16_{VAL_DATA_DIRNAME}.keypoints.json')
+TFLITE_INT8_PREDICTIONS = (
+    PREDICTIONS_DIR / f'tflite_{MODEL_NAME}_int8_{VAL_DATA_DIRNAME}.keypoints.json')
 
 ANN_FILE = VAL_DATA_ROOT / 'annotations/person_keypoints_val2017.json'
 IMG_PREFIX = VAL_DATA_ROOT / 'val2017'
-FP32_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_fp32.keypoints.json'
-FP16_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_fp16.keypoints.json'
-INT8_PREDICTIONS = PREDICTIONS_DIR / f'{MODEL_NAME}_int8.keypoints.json'
-OVERLAYS_DIR = REPO_ROOT / 'overlays' / MODEL_NAME
+FP32_PREDICTIONS = (
+    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_{VAL_DATA_DIRNAME}.keypoints.json')
+FP16_PREDICTIONS = (
+    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_fp16_{VAL_DATA_DIRNAME}.keypoints.json')
+INT8_PREDICTIONS = (
+    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_int8_{VAL_DATA_DIRNAME}.keypoints.json')
+AP_COREML_REPORT = REPO_ROOT / 'reports' / 'ap_coreml.txt'
+AP_TFLITE_REPORT = REPO_ROOT / 'reports' / 'ap_tflite.txt'
+OVERLAYS_DIR = REPO_ROOT / 'overlays'

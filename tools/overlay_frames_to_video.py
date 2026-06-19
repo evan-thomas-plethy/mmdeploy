@@ -80,7 +80,7 @@ def main():
         '--input-root',
         type=Path,
         default=OVERLAYS_DIR,
-        help='Root directory containing per-variant overlay folders.',
+        help='Root directory containing per-variant overlay folders, or a single overlay folder.',
     )
     parser.add_argument(
         '--output-dir',
@@ -92,6 +92,16 @@ def main():
 
     variants = list(VARIANTS) if 'all' in args.variant else args.variant
     output_dir = args.output_dir or (args.input_root / 'videos')
+
+    # Single overlay folder: input-root itself contains *_overlay.jpg frames.
+    if any(args.input_root.glob('*_overlay.jpg')):
+        frame_paths = _sorted_frames(args.input_root)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f'{args.input_root.name}.mp4'
+        print(f'Encoding {args.input_root.name}: {len(frame_paths)} frames @ {args.fps} fps -> {output_path}')
+        written = write_video(frame_paths, output_path, args.fps)
+        print(f'SUCCESS: Wrote {written} frames to {output_path}')
+        return
 
     if not args.input_root.exists():
         print(f'ERROR: Overlay root not found: {args.input_root}', file=sys.stderr)

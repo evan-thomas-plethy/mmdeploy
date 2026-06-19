@@ -1,7 +1,7 @@
-"""Render validation overlays for converted RTMPose models (instance-only).
+"""Render validation overlay MP4 from a predictions JSON.
 
-CoreML variants use prediction JSONs rsync'd from Mac (step 4a).
-TFLite variants run live inference on the instance.
+Reads val images, draws precomputed predictions in memory, writes a 10 fps MP4.
+Run tflite_export_val_predictions.py or coreml_export_val_predictions.py first.
 """
 
 import argparse
@@ -17,29 +17,32 @@ TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
 
-from model_paths import (
-    ANN_FILE,
-    FP32_PREDICTIONS,
-    FP32_TFLITE,
-    IMG_PREFIX,
-    INT8_PREDICTIONS,
-    INT8_TFLITE,
-    MODEL_NAME,
-    OVERLAYS_DIR,
-)
+from model_paths import OVERLAYS_DIR
 from overlay_draw import VARIANT_COLORS_BGR, draw_banner, draw_bbox_xywh, draw_pose
+from pose_eval_common import infer_precision_from_path
 
+# Kept for overlay_frames_to_video.py (legacy multi-variant layout).
 VARIANTS = ('coreml_fp32', 'coreml_int8', 'tflite_fp32', 'tflite_int8')
 
-COREML_PREDICTION_PATHS = {
-    'coreml_fp32': FP32_PREDICTIONS,
-    'coreml_int8': INT8_PREDICTIONS,
+PRECISION_COLORS_BGR = {
+    'fp32': VARIANT_COLORS_BGR['coreml_fp32'],
+    'fp16': (0, 200, 255),
+    'int8': VARIANT_COLORS_BGR['coreml_int8'],
 }
 
-TFLITE_MODEL_PATHS = {
-    'tflite_fp32': FP32_TFLITE,
-    'tflite_int8': INT8_TFLITE,
-}
+DEFAULT_OVERLAY_FPS = 10
+
+
+def overlay_output_video_path(predictions_path, overlays_dir=None):
+    """Map predictions/foo.keypoints.json -> overlays/foo.keypoints.mp4."""
+    predictions_path = Path(predictions_path)
+    overlays_dir = Path(overlays_dir or OVERLAYS_DIR)
+    filename = predictions_path.name
+    if filename.endswith('.json'):
+        filename = f'{filename[:-5]}.mp4'
+    elif not filename.endswith('.mp4'):
+        filename = f'{filename}.mp4'
+    return overlays_dir / filename
 
 
 def _load_coco(ann_file):
@@ -64,86 +67,82 @@ def _parse_flat_keypoints(flat_keypoints):
     return kpts[:, :2], kpts[:, 2]
 
 
-class TFLiteRunner:
-    def __init__(self, model_path):
-        from tflite_compare_ap import (
-            _format_input_tensor,
-            _load_interpreter,
-            _pick_simcc_outputs,
-            _run_inference,
-            _setup_mmpose_imports,
-            decode_keypoints,
-            preprocess_instance,
-        )
-
-        self._get_simcc_maximum, _, self._bbox_xyxy2cs, self._get_warp_matrix = (
-            _setup_mmpose_imports())
-        self._preprocess_instance = preprocess_instance
-        self._decode_keypoints = decode_keypoints
-        self._format_input_tensor = _format_input_tensor
-        self._run_inference = _run_inference
-
-        self._interpreter = _load_interpreter(model_path)
-        self._input_detail = self._interpreter.get_input_details()[0]
-        self._simcc_x_detail, self._simcc_y_detail = _pick_simcc_outputs(
-            self._interpreter.get_output_details())
-
-    def predict(self, img_rgb, bbox_xywh):
-        x, y, w, h = bbox_xywh
-        bbox_xyxy = np.array([x, y, x + w, y + h], dtype=np.float32)
-        normalized, center, scale = self._preprocess_instance(
-            img_rgb, bbox_xyxy, self._bbox_xyxy2cs, self._get_warp_matrix)
-        input_tensor = self._format_input_tensor(normalized, self._input_detail)
-        simcc_x, simcc_y = self._run_inference(
-            self._interpreter, self._input_detail,
-            self._simcc_x_detail, self._simcc_y_detail, input_tensor)
-        keypoints, scores = self._decode_keypoints(
-            simcc_x, simcc_y, center, scale, self._get_simcc_maximum)
-        return keypoints, scores
+def _default_label(predictions_path):
+    path = Path(predictions_path)
+    precision = infer_precision_from_path(path)
+    return f'{path.name} ({precision})'
 
 
-def _bbox_xywh_from_ann(ann, img_w, img_h):
-    x, y, w, h = ann['bbox']
-    x1 = np.clip(x, 0, img_w - 1)
-    y1 = np.clip(y, 0, img_h - 1)
-    x2 = np.clip(x + w, 0, img_w - 1)
-    y2 = np.clip(y + h, 0, img_h - 1)
-    return [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
+def _color_for_path(path):
+    return PRECISION_COLORS_BGR.get(infer_precision_from_path(path), (0, 255, 0))
 
 
-def render_coreml_overlays_from_json(
-    variant,
+class _VideoWriter:
+    def __init__(self, output_path, fps):
+        self._output_path = Path(output_path)
+        self._fps = fps
+        self._writer = None
+        self._written = 0
+
+    def write(self, frame_bgr):
+        if self._writer is None:
+            h, w = frame_bgr.shape[:2]
+            self._output_path.parent.mkdir(parents=True, exist_ok=True)
+            self._writer = cv2.VideoWriter(
+                str(self._output_path),
+                cv2.VideoWriter_fourcc(*'mp4v'),
+                self._fps,
+                (w, h),
+            )
+            if not self._writer.isOpened():
+                raise RuntimeError(f'Failed to open video writer for {self._output_path}')
+        self._writer.write(frame_bgr)
+        self._written += 1
+
+    def close(self):
+        if self._writer is not None:
+            self._writer.release()
+        if self._written == 0:
+            raise RuntimeError(f'No frames written to {self._output_path}')
+        print(f'SUCCESS: Wrote {self._written} frames to {self._output_path}')
+        return self._written
+
+
+def render_overlay_video_from_predictions(
     predictions_path,
     coco,
-    img_prefix,
-    output_dir,
+    images_dir,
+    output_video,
+    label=None,
+    color=None,
     max_images=None,
     score_thr=0.2,
+    fps=DEFAULT_OVERLAY_FPS,
 ):
+    predictions_path = Path(predictions_path)
     if not predictions_path.exists():
         raise FileNotFoundError(
             f'Predictions not found: {predictions_path}. '
-            'Run coreml_export_val_predictions.py on Mac (step 4a) and rsync JSONs here.')
+            'Run tflite_export_val_predictions.py or coreml_export_val_predictions.py first.')
 
     preds_by_image = _load_predictions_by_image(predictions_path)
-    color = VARIANT_COLORS_BGR[variant]
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    label = label or _default_label(predictions_path)
+    color = color or _color_for_path(predictions_path)
+    writer = _VideoWriter(output_video, fps)
 
     img_ids = sorted(preds_by_image)
     if max_images is not None:
         img_ids = img_ids[:max_images]
 
-    saved = 0
     for img_id in img_ids:
         img_info = coco.loadImgs(img_id)[0]
-        img_path = Path(img_prefix) / img_info['file_name']
+        img_path = Path(images_dir) / img_info['file_name']
         image_bgr = cv2.imread(str(img_path))
         if image_bgr is None:
             continue
 
         canvas = image_bgr.copy()
-        draw_banner(canvas, f'{variant} | {MODEL_NAME} (from Mac preds)', color)
+        draw_banner(canvas, label, color)
 
         for pred in preds_by_image[img_id]:
             if 'bbox' in pred:
@@ -151,76 +150,39 @@ def render_coreml_overlays_from_json(
             keypoints_xy, keypoint_scores = _parse_flat_keypoints(pred['keypoints'])
             draw_pose(canvas, keypoints_xy, keypoint_scores, color, score_thr=score_thr)
 
-        out_name = f'{Path(img_info["file_name"]).stem}_overlay.jpg'
-        cv2.imwrite(str(output_dir / out_name), canvas)
-        saved += 1
+        writer.write(canvas)
 
-    print(f'SUCCESS: Wrote {saved} overlays to {output_dir}')
-    return saved
-
-
-def render_tflite_overlays(
-    variant,
-    model_path,
-    coco,
-    img_prefix,
-    output_dir,
-    max_images=None,
-    score_thr=0.2,
-):
-    if not model_path.exists():
-        raise FileNotFoundError(f'Model not found: {model_path}')
-
-    runner = TFLiteRunner(model_path)
-    color = VARIANT_COLORS_BGR[variant]
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    img_ids = coco.getImgIds()
-    if max_images is not None:
-        img_ids = img_ids[:max_images]
-
-    saved = 0
-    for img_id in img_ids:
-        img_info = coco.loadImgs(img_id)[0]
-        img_path = Path(img_prefix) / img_info['file_name']
-        image_bgr = cv2.imread(str(img_path))
-        if image_bgr is None:
-            continue
-
-        img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-        img_h, img_w = img_rgb.shape[:2]
-        canvas = image_bgr.copy()
-        draw_banner(canvas, f'{variant} | {MODEL_NAME}', color)
-
-        ann_ids = coco.getAnnIds(imgIds=img_id)
-        for ann_id in ann_ids:
-            ann = coco.loadAnns(ann_id)[0]
-            if 'bbox' not in ann or 'keypoints' not in ann:
-                continue
-
-            bbox_xywh = _bbox_xywh_from_ann(ann, img_w, img_h)
-            draw_bbox_xywh(canvas, bbox_xywh, color=(128, 128, 128), thickness=1)
-            keypoints_xy, keypoint_scores = runner.predict(img_rgb, bbox_xywh)
-            draw_pose(canvas, keypoints_xy, keypoint_scores, color, score_thr=score_thr)
-
-        out_name = f'{Path(img_info["file_name"]).stem}_overlay.jpg'
-        cv2.imwrite(str(output_dir / out_name), canvas)
-        saved += 1
-
-    print(f'SUCCESS: Wrote {saved} overlays to {output_dir}')
-    return saved
+    return writer.close()
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Overlay converted RTMPose predictions on val images (instance only).')
+        description='Overlay val images with predictions and write an MP4 (no frame JPGs).')
     parser.add_argument(
-        '--variant',
-        nargs='+',
-        choices=list(VARIANTS) + ['all'],
-        default=['all'],
-        help='Which converted model(s) to visualize.',
+        '--predictions',
+        type=Path,
+        required=True,
+        metavar='PATH',
+        help='Precomputed keypoints JSON.',
+    )
+    parser.add_argument(
+        '--ann-file',
+        type=Path,
+        required=True,
+        metavar='PATH',
+        help='COCO val annotations JSON (maps image_id to file_name).',
+    )
+    parser.add_argument(
+        '--images-dir',
+        type=Path,
+        required=True,
+        metavar='DIR',
+        help='Val images directory.',
+    )
+    parser.add_argument(
+        '--label',
+        default=None,
+        help='Banner text (default: derived from predictions filename).',
     )
     parser.add_argument(
         '--max-images',
@@ -229,48 +191,53 @@ def main():
         help='Limit number of val images (default: all).',
     )
     parser.add_argument(
-        '--output-root',
-        type=Path,
-        default=OVERLAYS_DIR,
-        help='Root output directory (default: overlays/{MODEL_NAME}/).',
+        '--score-thr',
+        type=float,
+        default=0.2,
+        help='Minimum keypoint score to draw.',
+    )
+    parser.add_argument(
+        '--fps',
+        type=float,
+        default=DEFAULT_OVERLAY_FPS,
+        help=f'Output video frame rate (default: {DEFAULT_OVERLAY_FPS}).',
     )
     args = parser.parse_args()
 
-    variants = list(VARIANTS) if 'all' in args.variant else args.variant
-
-    if not ANN_FILE.exists() or not IMG_PREFIX.exists():
-        print(f'ERROR: Val data not found under {ANN_FILE.parent.parent}', file=sys.stderr)
+    if not args.predictions.exists():
+        print(f'ERROR: Predictions not found: {args.predictions}', file=sys.stderr)
+        sys.exit(1)
+    if not args.ann_file.exists():
+        print(f'ERROR: Annotations not found: {args.ann_file}', file=sys.stderr)
+        sys.exit(1)
+    if not args.images_dir.is_dir():
+        print(f'ERROR: Images directory not found: {args.images_dir}', file=sys.stderr)
         sys.exit(1)
 
-    coco = _load_coco(ANN_FILE)
+    output_video = overlay_output_video_path(args.predictions)
 
-    for variant in variants:
-        out_dir = args.output_root / variant
-        print(f'Rendering {variant} -> {out_dir}')
-        if variant in COREML_PREDICTION_PATHS:
-            render_coreml_overlays_from_json(
-                variant=variant,
-                predictions_path=COREML_PREDICTION_PATHS[variant],
-                coco=coco,
-                img_prefix=IMG_PREFIX,
-                output_dir=out_dir,
-                max_images=args.max_images,
-            )
-        else:
-            render_tflite_overlays(
-                variant=variant,
-                model_path=TFLITE_MODEL_PATHS[variant],
-                coco=coco,
-                img_prefix=IMG_PREFIX,
-                output_dir=out_dir,
-                max_images=args.max_images,
-            )
+    coco = _load_coco(args.ann_file)
+    print(f'Annotation file: {args.ann_file}')
+    print(f'Images dir: {args.images_dir}')
+    print(f'Predictions: {args.predictions}')
+    print(f'Output video: {output_video}')
+
+    render_overlay_video_from_predictions(
+        predictions_path=args.predictions,
+        coco=coco,
+        images_dir=args.images_dir,
+        output_video=output_video,
+        label=args.label,
+        max_images=args.max_images,
+        score_thr=args.score_thr,
+        fps=args.fps,
+    )
 
 
 if __name__ == '__main__':
     try:
         main()
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, RuntimeError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         sys.exit(1)
     except Exception as exc:

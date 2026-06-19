@@ -48,22 +48,24 @@ def crop_expanded_bbox(image_rgb, bbox_xywh, padding=BBOX_PADDING):
 
 
 def preprocess_image_rtmpose(image_rgb):
-    """Letterbox to 192x256 with black padding."""
+    """Letterbox to 192x256 with black padding (matches Android preprocessRtmpose)."""
     h, w = image_rgb.shape[:2]
     scale = min(TARGET_WIDTH / w, TARGET_HEIGHT / h)
-    scaled_w = max(1, int(w * scale))
-    scaled_h = max(1, int(h * scale))
+    scaled_w = max(1, int(round(w * scale)))
+    scaled_h = max(1, int(round(h * scale)))
     resized = cv2.resize(
         image_rgb, (scaled_w, scaled_h), interpolation=cv2.INTER_LINEAR)
 
-    dx = (TARGET_WIDTH - scaled_w) // 2
-    dy = (TARGET_HEIGHT - scaled_h) // 2
+    dx = (TARGET_WIDTH - scaled_w) / 2.0
+    dy = (TARGET_HEIGHT - scaled_h) / 2.0
+    x1 = int(np.floor(dx))
+    y1 = int(np.floor(dy))
     output = np.zeros((TARGET_HEIGHT, TARGET_WIDTH, 3), dtype=np.uint8)
-    output[dy:dy + scaled_h, dx:dx + scaled_w] = resized
+    output[y1:y1 + scaled_h, x1:x1 + scaled_w] = resized
 
     scale_x = w / scaled_w
     scale_y = h / scaled_h
-    return Image.fromarray(output), scale_x, scale_y, float(dx), float(dy)
+    return Image.fromarray(output), scale_x, scale_y, dx, dy
 
 
 def postprocess_rtmpose(simcc_x, simcc_y, scale_x, scale_y, dx, dy,
