@@ -1,9 +1,16 @@
-import torch
-import coremltools as ct
+import sys
+from pathlib import Path
 
-# Load your TorchScript model
-model_path = "work_dir/rtmdet/end2end.pt"
-traced_model = torch.jit.load(model_path)
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+import coremltools as ct
+import torch
+
+from rtmdet_model_paths import END2END_PT, FP32_MLMODEL, INPUT_HEIGHT, INPUT_WIDTH
+
+traced_model = torch.jit.load(str(END2END_PT))
 traced_model.eval()
 
 # # RTMDet RGB preprocessing
@@ -24,7 +31,7 @@ coreml_model = ct.convert(
     convert_to="neuralnetwork",
     inputs=[
         ct.ImageType(
-            shape=(1, 3, 320, 320),
+            shape=(1, 3, INPUT_HEIGHT, INPUT_WIDTH),
             scale=scale,
             bias=bias,
             color_layout=ct.colorlayout.BGR
@@ -33,5 +40,5 @@ coreml_model = ct.convert(
 )
 
 # Save the converted CoreML model
-coreml_model.save("rtmdet-nano_pretrained.mlmodel")
-print("Model successfully converted and saved as 'rtmdet-nano_pretrained.mlmodel'")
+coreml_model.save(str(FP32_MLMODEL))
+print(f"Model successfully converted and saved as '{FP32_MLMODEL}'")
