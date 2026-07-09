@@ -1,4 +1,7 @@
-"""Active model paths for conversion/validation pipelines. Update when switching checkpoints."""
+"""Active model paths for conversion/validation pipelines. Update when switching checkpoints.
+
+RTMPose export/val paths are defined here. RTMDet paths: tools/rtmdet_model_paths.py.
+"""
 
 from pathlib import Path
 
@@ -26,7 +29,7 @@ DEMO_IMAGE = MMPOSE_ROOT / 'tests/data/coco/000000197388.jpg'
 
 END2END_PT = REPO_ROOT / MMDEPLOY_WORK_DIR / 'end2end.pt'
 ONNX_MODEL = REPO_ROOT / MMDEPLOY_WORK_DIR / f'{MODEL_NAME}.onnx'
-FP32_MLMODEL = REPO_ROOT / f'{MODEL_NAME}.mlmodel'
+FP32_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_float32.mlmodel'
 FP16_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_float16.mlmodel'
 INT8_MLMODEL = REPO_ROOT / f'{MODEL_NAME}_int8.mlmodel'
 SAVED_MODEL_DIR = REPO_ROOT / 'saved_models' / f'{MODEL_NAME}_saved_model'
@@ -46,7 +49,7 @@ TFLITE_INT8_PREDICTIONS = (
 ANN_FILE = VAL_DATA_ROOT / 'annotations/person_keypoints_val2017.json'
 IMG_PREFIX = VAL_DATA_ROOT / 'val2017'
 FP32_PREDICTIONS = (
-    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_{VAL_DATA_DIRNAME}.keypoints.json')
+    PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_float32_{VAL_DATA_DIRNAME}.keypoints.json')
 FP16_PREDICTIONS = (
     PREDICTIONS_DIR / f'coreml_{MODEL_NAME}_float16_{VAL_DATA_DIRNAME}.keypoints.json')
 INT8_PREDICTIONS = (

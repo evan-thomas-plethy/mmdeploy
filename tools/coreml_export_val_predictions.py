@@ -18,10 +18,9 @@ from model_paths import PREDICTIONS_DIR
 from pose_eval_common import predictions_output_path
 from rtmpose_coreml_utils import (
     apply_nms,
-    crop_expanded_bbox,
     extract_simcc,
-    postprocess_rtmpose,
-    preprocess_image_rtmpose,
+    postprocess_topdown,
+    preprocess_topdown_pil,
     resolve_io_names,
     run_coreml_predict,
 )
@@ -85,20 +84,17 @@ def export_predictions(
         y1 = np.clip(y, 0, img_h - 1)
         x2 = np.clip(x + w, 0, img_w - 1)
         y2 = np.clip(y + h, 0, img_h - 1)
-        bbox_xywh = [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
 
         if 'area' in ann:
             area = float(ann['area'])
         else:
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
-        crop, offset_x, offset_y = crop_expanded_bbox(img_rgb, bbox_xywh)
-        pil_image, scale_x, scale_y, dx, dy = preprocess_image_rtmpose(crop)
+        pil_image, center, scale = preprocess_topdown_pil(
+            img_rgb, [x1, y1, x2, y2])
         prediction = run_coreml_predict(model, pil_image, input_name)
         simcc_x, simcc_y = extract_simcc(prediction, simcc_x_name, simcc_y_name)
-        keypoints = postprocess_rtmpose(
-            simcc_x, simcc_y, scale_x, scale_y, dx, dy,
-            offset_x, offset_y, img_w, img_h)
+        keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
 
         raw_instances.append({
             'img_id': img_id,

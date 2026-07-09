@@ -45,7 +45,7 @@ REMOTE_VISIONAI=/home/ubuntu/visionAI
 # Expected validation artifacts (paths relative to mmdeploy/ unless noted):
 #   Val annotations:                     mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 #   Val images:                          mmpose/data/${VAL_DATA_DIRNAME}/val2017/
-#   CoreML fp32 (baseline for step 4a):  ${MODEL_NAME}.mlmodel
+#   CoreML fp32 (baseline for step 4a):  ${MODEL_NAME}_float32.mlmodel
 #   CoreML float16:                      ${MODEL_NAME}_float16.mlmodel
 #   CoreML int8:                         ${MODEL_NAME}_int8.mlmodel
 #   TFLite fp32 (from onnx2tf, step 3):  saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
@@ -55,7 +55,7 @@ REMOTE_VISIONAI=/home/ubuntu/visionAI
 #   TFLite AP report (step 5b):          reports/ap_tflite.txt
 #   Overlay videos (step 6):             overlays/{predictions_filename}.mp4 (10 fps, no frame JPGs)
 #   Prediction JSON naming:              predictions/{coreml|tflite}_{model_stem}_{dataset}.keypoints.json
-#     dataset defaults to parent of annotations/ (e.g. merged_gbe_v9_gbe_app_vids_v4)
+#     model_stem includes precision suffix (_float32, _float16, _int8)
 # Example fp32 TFLite path:
 #   saved_models/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_saved_model/rtmpose-m_merged_gbe_v6_various_datasets_sweep_lyingperson_full_infiniteform_seed4_n736_unfreeze_full_ld0.5_float32.tflite
 
@@ -64,7 +64,7 @@ mkdir -p $LOCAL_VISIONAI/mmdeploy/tools \
   $LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations \
   $LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017
 # CoreML models; required for step 4a val
-rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}.mlmodel \
+rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float32.mlmodel \
   $LOCAL_VISIONAI/mmdeploy/
 rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float16.mlmodel \
   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_int8.mlmodel \
@@ -88,7 +88,7 @@ ssh visionai-gpu "mkdir -p $REMOTE_VISIONAI/mmdeploy/predictions"
 mkdir -p $LOCAL_VISIONAI/mmdeploy/predictions
 # (4a writes to mmdeploy/predictions/ on Mac)
 rsync -avz --progress \
-  $LOCAL_VISIONAI/mmdeploy/predictions/coreml_${MODEL_NAME}_${VAL_DATA_DIRNAME}.keypoints.json \
+  $LOCAL_VISIONAI/mmdeploy/predictions/coreml_${MODEL_NAME}_float32_${VAL_DATA_DIRNAME}.keypoints.json \
   $LOCAL_VISIONAI/mmdeploy/predictions/coreml_${MODEL_NAME}_int8_${VAL_DATA_DIRNAME}.keypoints.json \
   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/predictions/
 
@@ -100,7 +100,7 @@ rsync -avz --progress \
 # rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/overlays/*.mp4 ~/Desktop/
 
 # --- Instance -> Mac (optional: RTMDet CoreML) ---
-# rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/rtmdet-nano_various_datasets_epoch40.mlmodel \
+# rsync -avz --progress visionai-gpu:$REMOTE_VISIONAI/mmdeploy/rtmdet-nano_various_datasets_epoch40_float32.mlmodel \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/rtmdet-nano_various_datasets_epoch40_float16.mlmodel \
 #   $LOCAL_VISIONAI/mmdeploy/
 
@@ -119,13 +119,13 @@ cd ~/visionAI/mmdeploy
 # Update model path in script if needed, then run:
 python tools/rtmpose_torch_to_coreml.py
 # Verify fp32 CoreML model exists:
-ls -lh ${MODEL_NAME}.mlmodel
+ls -lh ${MODEL_NAME}_float32.mlmodel
 
 # 3. Env: model_conversion (same session)
 # Update model paths in script if needed, then run:
 python tools/coreml_weight_quantize.py
 # Verify CoreML models exist (fp32 baseline + fp16 + int8 for step 4a):
-ls -lh ${MODEL_NAME}.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}_int8.mlmodel
+ls -lh ${MODEL_NAME}_float32.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}_int8.mlmodel
 
 # 4a. On Mac only (no conda env; deps: coremltools, opencv-python, pillow, numpy)
 # See "File transfer" section: rsync fp32 + int8 .mlmodel, val data + scripts instance -> Mac first
@@ -135,7 +135,7 @@ cd $LOCAL_VISIONAI/mmdeploy
 VAL_ANN=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 VAL_IMG=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017
 python tools/coreml_export_val_predictions.py \
-  --models ${MODEL_NAME}.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}_int8.mlmodel \
+  --models ${MODEL_NAME}_float32.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}_int8.mlmodel \
   --ann-file ${VAL_ANN} \
   --img-prefix ${VAL_IMG}
 
@@ -148,7 +148,7 @@ cd ~/visionAI/mmdeploy
 VAL_ANN=/home/ubuntu/visionAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 python tools/coreml_compare_ap.py \
   --predictions \
-    predictions/coreml_${MODEL_NAME}_${VAL_DATA_DIRNAME}.keypoints.json \
+    predictions/coreml_${MODEL_NAME}_float32_${VAL_DATA_DIRNAME}.keypoints.json \
     predictions/coreml_${MODEL_NAME}_float16_${VAL_DATA_DIRNAME}.keypoints.json \
   --ann-file ${VAL_ANN}
 
@@ -169,6 +169,61 @@ cd ~/visionAI/mmdeploy
 python tools/rtmdet_torch_to_coreml.py
 
 # =============================================================================
+# RTMDet-nano_pretrained -> CoreML + TFLite (fp32 + fp16)
+# =============================================================================
+# Checkpoint: mmdeploy/mmdet/checkpoints/rtmdet-nano_pretrained.pth
+# Paths:      mmdeploy/tools/rtmdet_model_paths.py (MODEL_NAME=rtmdet-nano_pretrained)
+#
+# Outputs (under mmdeploy/):
+#   ${MODEL_NAME}_float32.mlmodel
+#   ${MODEL_NAME}_float16.mlmodel
+#   saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float32.tflite
+#   saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float16.tflite
+
+MODEL_NAME=rtmdet-nano_pretrained
+TFLITE_MODEL_NAME=${MODEL_NAME}
+CHECKPOINT=/home/ubuntu/visionAI/mmdeploy/mmdet/checkpoints/rtmdet-nano_pretrained.pth
+MMDET_CONFIG=/home/ubuntu/visionAI/mmdeploy/mmdet/configs/rtmdet_nano_320_8xb32_coco_finetune.py
+DEMO_IMAGE=/home/ubuntu/visionAI/mmdetection/demo/demo.jpg
+
+# --- 1. Env: mmdeploy — TorchScript export (skip if work_dir/${MODEL_NAME}/end2end.pt exists) ---
+conda activate mmdeploy
+cd ~/visionAI/mmdeploy
+export PYTHONPATH=$(pwd):$PYTHONPATH
+ls -lh ${CHECKPOINT}
+python tools/deploy.py \
+  configs/mmdet/detection/detection_coreml_static-320.py \
+  ${MMDET_CONFIG} \
+  ${CHECKPOINT} \
+  ${DEMO_IMAGE} \
+  --work-dir work_dir/${MODEL_NAME} \
+  --device cpu \
+  --dump-info
+ls -lh work_dir/${MODEL_NAME}/end2end.pt
+
+# --- 2. Env: model_conversion — CoreML fp32 ---
+conda deactivate && conda activate model_conversion
+cd ~/visionAI/mmdeploy
+python tools/rtmdet_torch_to_coreml.py
+ls -lh ${MODEL_NAME}_float32.mlmodel
+
+# --- 3. Env: model_conversion — CoreML fp16 (weight-only quant from fp32) ---
+python tools/coreml_weight_quantize.py \
+  --fp32 ${MODEL_NAME}_float32.mlmodel \
+  --variants fp16
+ls -lh ${MODEL_NAME}_float32.mlmodel ${MODEL_NAME}_float16.mlmodel
+
+# --- 4. Env: model_conversion — TFLite fp32 + fp16 (ONNX -> SavedModel -> TFLite) ---
+python tools/rtmdet_torchscript_to_onnx.py
+ls -lh work_dir/${TFLITE_MODEL_NAME}/${TFLITE_MODEL_NAME}.onnx
+rm -rf saved_model
+onnx2tf -i work_dir/${TFLITE_MODEL_NAME}/${TFLITE_MODEL_NAME}.onnx
+rm -rf saved_models/${TFLITE_MODEL_NAME}_saved_model
+mv saved_model saved_models/${TFLITE_MODEL_NAME}_saved_model
+ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float32.tflite
+ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float16.tflite
+
+# =============================================================================
 # RTMDet-nano various_datasets epoch_40 -> CoreML + TFLite (fp32 + fp16)
 # =============================================================================
 # Checkpoint: mmdetection/work_dirs/rtmdet-nano_various_datasets/epoch_40.pth
@@ -177,12 +232,12 @@ python tools/rtmdet_torch_to_coreml.py
 #              mmdetection/tools/model_paths.py (val / AP / overlays)
 #
 # Outputs (under mmdeploy/ unless noted):
-#   ${MODEL_NAME}.mlmodel
+#   ${MODEL_NAME}_float32.mlmodel
 #   ${MODEL_NAME}_float16.mlmodel
 #   saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float32.tflite
 #   saved_models/${MODEL_NAME}_saved_model/${MODEL_NAME}_float16.tflite
 # Predictions / reports / overlays (under mmdetection/):
-#   predictions/coreml_${MODEL_NAME}_${VAL_DATA_DIRNAME}.detections.json
+#   predictions/coreml_${MODEL_NAME}_float32_${VAL_DATA_DIRNAME}.detections.json
 #   predictions/coreml_${MODEL_NAME}_float16_${VAL_DATA_DIRNAME}.detections.json
 #   predictions/tflite_${MODEL_NAME}_float32_${VAL_DATA_DIRNAME}.detections.json
 #   predictions/tflite_${MODEL_NAME}_float16_${VAL_DATA_DIRNAME}.detections.json
@@ -215,13 +270,13 @@ ls -lh work_dir/${MODEL_NAME}/end2end.pt
 conda deactivate && conda activate model_conversion
 cd ~/visionAI/mmdeploy
 python tools/rtmdet_torch_to_coreml.py
-ls -lh ${MODEL_NAME}.mlmodel
+ls -lh ${MODEL_NAME}_float32.mlmodel
 
 # --- 3. Env: model_conversion — CoreML fp16 (weight-only quant from fp32) ---
 python tools/coreml_weight_quantize.py \
-  --fp32 ${MODEL_NAME}.mlmodel \
+  --fp32 ${MODEL_NAME}_float32.mlmodel \
   --variants fp16
-ls -lh ${MODEL_NAME}.mlmodel ${MODEL_NAME}_float16.mlmodel
+ls -lh ${MODEL_NAME}_float32.mlmodel ${MODEL_NAME}_float16.mlmodel
 
 # --- 4. Env: model_conversion — TFLite fp32 + fp16 (ONNX -> SavedModel -> TFLite) ---
 python tools/rtmdet_torchscript_to_onnx.py
@@ -241,7 +296,7 @@ ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float1
 #   $LOCAL_VISIONAI/mmdetection/data/${VAL_DATA_DIRNAME}/annotations \
 #   $LOCAL_VISIONAI/mmdetection/data/${VAL_DATA_DIRNAME}/val2017
 # rsync -avz --progress \
-#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}.mlmodel \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float32.mlmodel \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float16.mlmodel \
 #   $LOCAL_VISIONAI/mmdeploy/
 # rsync -avz --progress \
@@ -265,7 +320,7 @@ ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float1
 # VAL_IMG=$LOCAL_VISIONAI/mmdetection/data/${VAL_DATA_DIRNAME}/val2017
 # python tools/exported_export_val_predictions.py \
 #   --models \
-#     ../mmdeploy/${MODEL_NAME}.mlmodel \
+#     ../mmdeploy/${MODEL_NAME}_float32.mlmodel \
 #     ../mmdeploy/${MODEL_NAME}_float16.mlmodel \
 #   --ann-file ${VAL_ANN} \
 #   --img-prefix ${VAL_IMG}
@@ -274,7 +329,7 @@ ls -lh saved_models/${TFLITE_MODEL_NAME}_saved_model/${TFLITE_MODEL_NAME}_float1
 # --- Mac -> Instance: rsync CoreML predictions ---
 # ssh visionai-gpu "mkdir -p $REMOTE_VISIONAI/mmdetection/predictions"
 # rsync -avz --progress \
-#   $LOCAL_VISIONAI/mmdetection/predictions/coreml_${MODEL_NAME}_${VAL_DATA_DIRNAME}.detections.json \
+#   $LOCAL_VISIONAI/mmdetection/predictions/coreml_${MODEL_NAME}_float32_${VAL_DATA_DIRNAME}.detections.json \
 #   $LOCAL_VISIONAI/mmdetection/predictions/coreml_${MODEL_NAME}_float16_${VAL_DATA_DIRNAME}.detections.json \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdetection/predictions/
 
@@ -297,7 +352,7 @@ ls -lh predictions/tflite_*_${VAL_DATA_DIRNAME}.detections.json
 # CoreML (after step 5a + rsync):
 python tools/exported_compare_ap.py \
   --predictions \
-    predictions/coreml_${MODEL_NAME}_${VAL_DATA_DIRNAME}.detections.json \
+    predictions/coreml_${MODEL_NAME}_float32_${VAL_DATA_DIRNAME}.detections.json \
     predictions/coreml_${MODEL_NAME}_float16_${VAL_DATA_DIRNAME}.detections.json \
   --ann-file ${VAL_ANN}
 # TFLite:
@@ -325,7 +380,7 @@ python tools/overlay_val_predictions.py \
 
 # --- Instance -> Mac (optional: pull CoreML for local iOS integration) ---
 # rsync -avz --progress \
-#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}.mlmodel \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float32.mlmodel \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${MODEL_NAME}_float16.mlmodel \
 #   $LOCAL_VISIONAI/mmdeploy/
 
@@ -479,7 +534,7 @@ ls -lh ${TFLITE_MODEL_NAME}_int8.tflite
 # =============================================================================
 # RTMPose-M pretrained — CoreML fp16 on coco_general_val (fp32 vs fp16 AP)
 # =============================================================================
-# Prereq on instance: rtmpose-m_pretrained.mlmodel (fp32 CoreML export exists).
+# Prereq on instance: rtmpose-m_pretrained_float32.mlmodel (fp32 CoreML export exists).
 # Val set: coco_general_val (general_val.json + general_val/ images).
 # fp32 baseline predictions may already exist at:
 #   predictions/coco_general_val/ios_pretrained_v1_fp32.keypoints.json
@@ -496,9 +551,9 @@ REPORT_GENERAL_VAL=${REMOTE_VISIONAI}/mmdeploy/reports/coco_general_val
 # Does not require editing tools/model_paths.py.
 conda activate model_conversion
 cd ~/visionAI/mmdeploy
-ls -lh ${PRETRAINED_MODEL_NAME}.mlmodel
+ls -lh ${PRETRAINED_MODEL_NAME}_float32.mlmodel
 python tools/coreml_weight_quantize.py \
-  --fp32 ${PRETRAINED_MODEL_NAME}.mlmodel \
+  --fp32 ${PRETRAINED_MODEL_NAME}_float32.mlmodel \
   --variants fp16
 ls -lh ${PRETRAINED_MODEL_NAME}_float16.mlmodel
 
@@ -508,7 +563,7 @@ ls -lh ${PRETRAINED_MODEL_NAME}_float16.mlmodel
 #   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/annotations \
 #   $LOCAL_VISIONAI/mmpose/data/${GENERAL_VAL_DIRNAME}/general_val
 # rsync -avz --progress \
-#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}.mlmodel \
+#   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}_float32.mlmodel \
 #   visionai-gpu:$REMOTE_VISIONAI/mmdeploy/${PRETRAINED_MODEL_NAME}_float16.mlmodel \
 #   $LOCAL_VISIONAI/mmdeploy/
 # rsync -avz --progress \
@@ -535,7 +590,7 @@ ls -lh ${PRETRAINED_MODEL_NAME}_float16.mlmodel
 #   --predictions-dir $PRED_DIR
 # Optional: re-export fp32 from same .mlmodel (instead of reusing ios_pretrained_v1_fp32):
 # python tools/coreml_export_val_predictions.py \
-#   --models ${PRETRAINED_MODEL_NAME}.mlmodel \
+#   --models ${PRETRAINED_MODEL_NAME}_float32.mlmodel \
 #   --ann-file $ANN_FILE --img-prefix $IMG_PREFIX --predictions-dir $PRED_DIR
 
 # --- Mac -> Instance: rsync fp16 predictions ---

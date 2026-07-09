@@ -19,11 +19,21 @@ VARIANT_SPECS = {
 }
 
 
+def _model_base_stem(fp32_path):
+    """Strip _float32 from fp32 artifact stem so fp16/int8 names stay parallel."""
+    stem = Path(fp32_path).stem
+    if stem.endswith('_float32'):
+        return stem[: -len('_float32')]
+    return stem
+
+
 def _output_path(fp32_path, variant):
     fp32_path = Path(fp32_path)
+    base = _model_base_stem(fp32_path)
+    suffix = fp32_path.suffix
     if variant == 'fp16':
-        return fp32_path.with_name(f'{fp32_path.stem}_float16{fp32_path.suffix}')
-    return fp32_path.with_name(f'{fp32_path.stem}_int8{fp32_path.suffix}')
+        return fp32_path.with_name(f'{base}_float16{suffix}')
+    return fp32_path.with_name(f'{base}_int8{suffix}')
 
 
 def main():

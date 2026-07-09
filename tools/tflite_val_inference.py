@@ -21,9 +21,8 @@ except ImportError:
 
 from rtmpose_coreml_utils import (
     apply_nms,
-    crop_expanded_bbox,
-    postprocess_rtmpose,
-    preprocess_image_rtmpose,
+    postprocess_topdown,
+    preprocess_topdown,
 )
 
 MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
@@ -35,12 +34,13 @@ def _bbox_xywh_from_xyxy(bbox_xyxy):
     return [float(x1), float(y1), float(x2 - x1), float(y2 - y1)]
 
 
-def preprocess_crop_for_tflite(crop_rgb):
-    """Letterbox crop and normalize for TFLite input."""
-    pil_image, scale_x, scale_y, dx, dy = preprocess_image_rtmpose(crop_rgb)
-    arr = np.asarray(pil_image, dtype=np.float32)
-    normalized = (arr - MEAN) / STD
-    return normalized, scale_x, scale_y, dx, dy
+def normalize_for_tflite(warped_rgb):
+    """Normalize a warped uint8 RGB crop (H, W, 3) for TFLite input.
+
+    (pixel - MEAN) / STD in RGB order, matching the mmpose data preprocessor.
+    """
+    arr = np.asarray(warped_rgb, dtype=np.float32)
+    return (arr - MEAN) / STD
 
 
 def _format_input_tensor(normalized_hwc, input_detail):
@@ -157,14 +157,12 @@ def export_tflite_predictions(
         else:
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
-        crop, offset_x, offset_y = crop_expanded_bbox(img_rgb, bbox_xywh)
-        normalized, scale_x, scale_y, dx, dy = preprocess_crop_for_tflite(crop)
+        warped, center, scale = preprocess_topdown(img_rgb, [x1, y1, x2, y2])
+        normalized = normalize_for_tflite(warped)
         input_tensor = _format_input_tensor(normalized, input_detail)
         simcc_x, simcc_y = _run_inference(
             interpreter, input_detail, simcc_x_detail, simcc_y_detail, input_tensor)
-        keypoints = postprocess_rtmpose(
-            simcc_x, simcc_y, scale_x, scale_y, dx, dy,
-            offset_x, offset_y, img_w, img_h)
+        keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
 
         raw_instances.append({
             'img_id': img_id,
