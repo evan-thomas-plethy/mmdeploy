@@ -1,7 +1,7 @@
 """TFLite val inference shared by tflite_export_val_predictions.py.
 
-Pre/post matches the Android production pipeline: expanded bbox crop,
-letterbox to 192x256 with black padding, softmax SIMCC decode.
+Pre/post matches the mobile production pipeline: optional expanded bbox crop,
+letterbox to 192x256 with black padding, sigmoid SIMCC decode.
 """
 
 import json
@@ -21,8 +21,8 @@ except ImportError:
 
 from rtmpose_coreml_utils import (
     apply_nms,
-    postprocess_topdown,
-    preprocess_topdown,
+    postprocess_letterbox,
+    preprocess_rtmpose_mobile,
 )
 
 MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
@@ -98,8 +98,13 @@ def export_tflite_predictions(
     output_path,
     max_samples=None,
     force_rerun=False,
+    use_bbox=False,
 ):
-    """Run TFLite val inference and write COCO keypoints JSON."""
+    """Run TFLite val inference and write COCO keypoints JSON.
+
+    use_bbox: when True, crop each COCO annotation bbox at 1.25x margin before
+    letterbox (matches mobile RTMDet -> RTMPose pipeline).
+    """
     model_path = Path(model_path)
     output_path = Path(output_path)
     if output_path.exists() and not force_rerun:
@@ -157,12 +162,16 @@ def export_tflite_predictions(
         else:
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
-        warped, center, scale = preprocess_topdown(img_rgb, [x1, y1, x2, y2])
+        bbox_xyxy = [x1, y1, x2, y2] if use_bbox else None
+        warped, params, crop_offset_x, crop_offset_y = preprocess_rtmpose_mobile(
+            img_rgb, bbox_xyxy=bbox_xyxy)
         normalized = normalize_for_tflite(warped)
         input_tensor = _format_input_tensor(normalized, input_detail)
         simcc_x, simcc_y = _run_inference(
             interpreter, input_detail, simcc_x_detail, simcc_y_detail, input_tensor)
-        keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
+        keypoints = postprocess_letterbox(
+            simcc_x, simcc_y, params,
+            crop_offset_x=crop_offset_x, crop_offset_y=crop_offset_y)
 
         raw_instances.append({
             'img_id': img_id,

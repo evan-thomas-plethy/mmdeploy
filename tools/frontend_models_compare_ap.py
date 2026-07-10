@@ -1,7 +1,7 @@
 """Compare COCO AP across precomputed prediction JSONs.
 
 Pass keypoints JSON paths from tflite_export_val_predictions.py or
-coreml_export_val_predictions.py. Column labels are inferred from filenames.
+coreml_export_val_predictions.py. Column labels are prediction filenames.
 """
 
 import argparse
@@ -17,14 +17,12 @@ from model_paths import ANN_FILE
 from pose_eval_common import (
     column_labels_for_paths,
     compute_ap_from_predictions,
-    infer_precision_from_path,
     print_ap_comparison_table,
 )
 
 
 def _comparison_title(paths, labels):
-    parts = [f'{labels[p]} ({infer_precision_from_path(p)})' for p in paths]
-    return ' vs '.join(parts)
+    return ' vs '.join(labels[p] for p in paths)
 
 
 def compare_predictions(prediction_paths, ann_file):

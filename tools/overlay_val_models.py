@@ -19,7 +19,7 @@ if str(TOOLS_DIR) not in sys.path:
 
 from model_paths import OVERLAYS_DIR
 from overlay_draw import VARIANT_COLORS_BGR, draw_banner, draw_bbox_xywh, draw_pose
-from pose_eval_common import infer_precision_from_path
+from pose_eval_common import prediction_label_from_path
 
 # Kept for overlay_frames_to_video.py (legacy multi-variant layout).
 VARIANTS = ('coreml_fp32', 'coreml_int8', 'tflite_fp32', 'tflite_int8')
@@ -68,12 +68,12 @@ def _parse_flat_keypoints(flat_keypoints):
 
 
 def _default_label(predictions_path):
-    path = Path(predictions_path)
-    precision = infer_precision_from_path(path)
-    return f'{path.name} ({precision})'
+    return prediction_label_from_path(predictions_path)
 
 
 def _color_for_path(path):
+    # Color hint from filename tags when present; default green otherwise.
+    from pose_eval_common import infer_precision_from_path
     return PRECISION_COLORS_BGR.get(infer_precision_from_path(path), (0, 255, 0))
 
 
@@ -82,20 +82,24 @@ class _VideoWriter:
         self._output_path = Path(output_path)
         self._fps = fps
         self._writer = None
+        self._size = None  # (width, height) from first frame
         self._written = 0
 
     def write(self, frame_bgr):
+        h, w = frame_bgr.shape[:2]
         if self._writer is None:
-            h, w = frame_bgr.shape[:2]
+            self._size = (w, h)
             self._output_path.parent.mkdir(parents=True, exist_ok=True)
             self._writer = cv2.VideoWriter(
                 str(self._output_path),
                 cv2.VideoWriter_fourcc(*'mp4v'),
                 self._fps,
-                (w, h),
+                self._size,
             )
             if not self._writer.isOpened():
                 raise RuntimeError(f'Failed to open video writer for {self._output_path}')
+        elif (w, h) != self._size:
+            frame_bgr = cv2.resize(frame_bgr, self._size, interpolation=cv2.INTER_LINEAR)
         self._writer.write(frame_bgr)
         self._written += 1
 

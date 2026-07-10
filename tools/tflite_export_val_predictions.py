@@ -58,6 +58,11 @@ def main():
         action='store_true',
         help='Re-run inference even if prediction JSON exists.',
     )
+    parser.add_argument(
+        '--bbox',
+        action='store_true',
+        help='Crop each COCO annotation bbox at 1.25x margin before letterbox.',
+    )
     args = parser.parse_args()
 
     if not args.ann_file.exists():
@@ -81,6 +86,7 @@ def main():
             predictions_dir=args.predictions_dir,
             dataset_name=args.dataset_name,
             max_samples=args.max_samples,
+            use_bbox=args.bbox,
         )
         print(f'Exporting predictions for {model_path.name} -> {output_path}')
         export_tflite_predictions(
@@ -90,6 +96,7 @@ def main():
             output_path,
             max_samples=args.max_samples,
             force_rerun=args.force_rerun,
+            use_bbox=args.bbox,
         )
 
 

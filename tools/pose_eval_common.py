@@ -70,6 +70,7 @@ def predictions_output_path(
     predictions_dir=None,
     dataset_name=None,
     max_samples=None,
+    use_bbox=False,
 ):
     """Build predictions/{backend}_{model}_{dataset}.keypoints.json."""
     backend = backend.lower()
@@ -80,14 +81,29 @@ def predictions_output_path(
     model_tag = sanitize_path_tag(Path(model_path).stem)
     dataset_tag = infer_dataset_name(ann_file, dataset_name)
     filename = f'{backend}_{model_tag}_{dataset_tag}'
+    if use_bbox:
+        filename += '_bbox'
     if max_samples is not None:
         filename += f'_n{max_samples}'
     out_dir = Path(predictions_dir) if predictions_dir is not None else PREDICTIONS_DIR
     return out_dir / f'{filename}.keypoints.json'
 
 
+def prediction_label_from_path(path):
+    """Human-readable label from a prediction JSON path (no precision claims)."""
+    name = Path(path).name
+    if name.endswith('.keypoints.json'):
+        return name[: -len('.keypoints.json')]
+    if name.endswith('.json'):
+        return name[: -len('.json')]
+    return Path(path).stem
+
+
 def infer_precision_from_path(path):
-    """Infer fp32 / fp16 / int8 from model filename (no suffix => fp32)."""
+    """Infer fp32 / fp16 / int8 from model filename (no suffix => fp32).
+
+    Kept for overlay color heuristics; AP reports use prediction_label_from_path.
+    """
     stem = Path(path).stem.lower()
     if '_int8' in stem or stem.endswith('int8'):
         return 'int8'
@@ -99,16 +115,21 @@ def infer_precision_from_path(path):
 
 
 def column_labels_for_paths(paths):
-    """Assign unique table column labels from model/prediction paths."""
+    """Assign unique table column labels from prediction/model filenames."""
     paths = [Path(p) for p in paths]
-    precisions = [infer_precision_from_path(p) for p in paths]
-    precision_counts = {}
-    for prec in precisions:
-        precision_counts[prec] = precision_counts.get(prec, 0) + 1
+    bases = [prediction_label_from_path(p) for p in paths]
+    counts = {}
+    for base in bases:
+        counts[base] = counts.get(base, 0) + 1
 
     labels = {}
-    for path, prec in zip(paths, precisions):
-        labels[path] = prec if precision_counts[prec] == 1 else path.stem
+    seen = {}
+    for path, base in zip(paths, bases):
+        if counts[base] == 1:
+            labels[path] = base
+        else:
+            seen[base] = seen.get(base, 0) + 1
+            labels[path] = f'{base}_{seen[base]}'
     return labels
 
 
@@ -125,25 +146,28 @@ def version_column_label(version_key, meta_value):
 def print_ap_comparison_table(
         baseline_metrics,
         variant_metrics_by_label,
-        baseline_label='fp32'):
+        baseline_label='baseline'):
     """Print AP table: one baseline column plus variant columns and deltas."""
     labels = list(variant_metrics_by_label)
-    header = f'{"Metric":<12} {baseline_label:>12}'
-    for label in labels:
-        header += f' {label:>12}'
-    for label in labels:
-        header += f' {"d" + label:>12}'
+    all_labels = [baseline_label] + labels
+    col_w = max(12, max(len(lbl) for lbl in all_labels), max(len('d' + lbl) for lbl in labels) if labels else 12)
+
+    header = f'{"Metric":<12}'
+    for lbl in all_labels:
+        header += f' {lbl:>{col_w}}'
+    for lbl in labels:
+        header += f' {"d" + lbl:>{col_w}}'
     print(header)
     print('-' * len(header))
 
     for metric in baseline_metrics:
         baseline_val = baseline_metrics[metric]
-        row = f'{metric:<12} {baseline_val:>12.4f}'
+        row = f'{metric:<12} {baseline_val:>{col_w}.4f}'
         for label in labels:
-            row += f' {variant_metrics_by_label[label][metric]:>12.4f}'
+            row += f' {variant_metrics_by_label[label][metric]:>{col_w}.4f}'
         for label in labels:
             delta = variant_metrics_by_label[label][metric] - baseline_val
-            row += f' {delta:>+12.4f}'
+            row += f' {delta:>+{col_w}.4f}'
         print(row)
 
     print('-' * len(header))
@@ -152,17 +176,18 @@ def print_ap_comparison_table(
         print(f'Primary coco/AP delta ({label} - {baseline_label}): {ap_delta:+.4f}')
 
 
-def print_ap_comparison(metrics_a, metrics_b, label_a='fp32', label_b='int8'):
+def print_ap_comparison(metrics_a, metrics_b, label_a='a', label_b='b'):
+    col_w = max(12, len(label_a), len(label_b), len('delta'))
     print('=' * 72)
     print('COCO AP comparison (same metric as training save_best=coco/AP)')
     print('=' * 72)
-    print(f'{"Metric":<12} {label_a:>12} {label_b:>12} {"delta":>12}')
+    print(f'{"Metric":<12} {label_a:>{col_w}} {label_b:>{col_w}} {"delta":>{col_w}}')
     print('-' * 72)
     for metric in metrics_a:
         val_a = metrics_a[metric]
         val_b = metrics_b[metric]
         delta = val_b - val_a
-        print(f'{metric:<12} {val_a:>12.4f} {val_b:>12.4f} {delta:>+12.4f}')
+        print(f'{metric:<12} {val_a:>{col_w}.4f} {val_b:>{col_w}.4f} {delta:>+{col_w}.4f}')
 
     ap_delta = metrics_b['AP'] - metrics_a['AP']
     print('-' * 72)

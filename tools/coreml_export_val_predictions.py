@@ -19,8 +19,8 @@ from pose_eval_common import predictions_output_path
 from rtmpose_coreml_utils import (
     apply_nms,
     extract_simcc,
-    postprocess_topdown,
-    preprocess_topdown_pil,
+    postprocess_letterbox,
+    preprocess_rtmpose_mobile_pil,
     resolve_io_names,
     run_coreml_predict,
 )
@@ -44,6 +44,7 @@ def export_predictions(
     output_path,
     max_samples=None,
     force_rerun=False,
+    use_bbox=False,
 ):
     output_path = Path(output_path)
     if output_path.exists() and not force_rerun:
@@ -90,11 +91,14 @@ def export_predictions(
         else:
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
-        pil_image, center, scale = preprocess_topdown_pil(
-            img_rgb, [x1, y1, x2, y2])
+        bbox_xyxy = [x1, y1, x2, y2] if use_bbox else None
+        pil_image, params, crop_offset_x, crop_offset_y = preprocess_rtmpose_mobile_pil(
+            img_rgb, bbox_xyxy=bbox_xyxy)
         prediction = run_coreml_predict(model, pil_image, input_name)
         simcc_x, simcc_y = extract_simcc(prediction, simcc_x_name, simcc_y_name)
-        keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
+        keypoints = postprocess_letterbox(
+            simcc_x, simcc_y, params,
+            crop_offset_x=crop_offset_x, crop_offset_y=crop_offset_y)
 
         raw_instances.append({
             'img_id': img_id,
@@ -166,6 +170,11 @@ def main():
         action='store_true',
         help='Re-run inference even if prediction JSON exists.',
     )
+    parser.add_argument(
+        '--bbox',
+        action='store_true',
+        help='Crop each COCO annotation bbox at 1.25x margin before letterbox.',
+    )
     args = parser.parse_args()
 
     if not args.ann_file.exists():
@@ -189,6 +198,7 @@ def main():
             predictions_dir=args.predictions_dir,
             dataset_name=args.dataset_name,
             max_samples=args.max_samples,
+            use_bbox=args.bbox,
         )
         print(f'Exporting predictions for {model_path.name} -> {output_path}')
         export_predictions(
@@ -198,6 +208,7 @@ def main():
             output_path,
             max_samples=args.max_samples,
             force_rerun=args.force_rerun,
+            use_bbox=args.bbox,
         )
 
 
