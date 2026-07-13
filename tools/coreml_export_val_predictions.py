@@ -19,8 +19,8 @@ from pose_eval_common import predictions_output_path
 from rtmpose_coreml_utils import (
     apply_nms,
     extract_simcc,
-    postprocess_letterbox,
-    preprocess_rtmpose_mobile_pil,
+    postprocess_topdown,
+    preprocess_topdown_pil,
     resolve_io_names,
     run_coreml_predict,
 )
@@ -44,8 +44,14 @@ def export_predictions(
     output_path,
     max_samples=None,
     force_rerun=False,
-    use_bbox=False,
+    no_bbox=False,
 ):
+    """Run CoreML val inference with mmpose-aligned topdown preprocess.
+
+    Per annotation: GetBBoxCenterScale(1.25) + TopdownAffine(192x256) + SimCC
+    decode mapped back to image space (same geometry as mmpose val_pipeline).
+    With no_bbox=True, use the full image [0, 0, W, H] as the bbox.
+    """
     output_path = Path(output_path)
     if output_path.exists() and not force_rerun:
         print(f'Using existing predictions: {output_path}')
@@ -63,7 +69,9 @@ def export_predictions(
     image_cache = {}
 
     for ann in annotations:
-        if 'bbox' not in ann or 'keypoints' not in ann:
+        if 'keypoints' not in ann:
+            continue
+        if not no_bbox and 'bbox' not in ann:
             continue
 
         img_id = ann['image_id']
@@ -80,25 +88,25 @@ def export_predictions(
             )
 
         img_rgb, img_w, img_h = image_cache[img_id]
-        x, y, w, h = ann['bbox']
-        x1 = np.clip(x, 0, img_w - 1)
-        y1 = np.clip(y, 0, img_h - 1)
-        x2 = np.clip(x + w, 0, img_w - 1)
-        y2 = np.clip(y + h, 0, img_h - 1)
+        if no_bbox:
+            x1, y1, x2, y2 = 0.0, 0.0, float(img_w), float(img_h)
+        else:
+            x, y, w, h = ann['bbox']
+            x1 = np.clip(x, 0, img_w - 1)
+            y1 = np.clip(y, 0, img_h - 1)
+            x2 = np.clip(x + w, 0, img_w - 1)
+            y2 = np.clip(y + h, 0, img_h - 1)
 
         if 'area' in ann:
             area = float(ann['area'])
         else:
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
-        bbox_xyxy = [x1, y1, x2, y2] if use_bbox else None
-        pil_image, params, crop_offset_x, crop_offset_y = preprocess_rtmpose_mobile_pil(
-            img_rgb, bbox_xyxy=bbox_xyxy)
+        pil_image, center, scale = preprocess_topdown_pil(
+            img_rgb, bbox_xyxy=[x1, y1, x2, y2])
         prediction = run_coreml_predict(model, pil_image, input_name)
         simcc_x, simcc_y = extract_simcc(prediction, simcc_x_name, simcc_y_name)
-        keypoints = postprocess_letterbox(
-            simcc_x, simcc_y, params,
-            crop_offset_x=crop_offset_x, crop_offset_y=crop_offset_y)
+        keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
 
         raw_instances.append({
             'img_id': img_id,
@@ -171,9 +179,9 @@ def main():
         help='Re-run inference even if prediction JSON exists.',
     )
     parser.add_argument(
-        '--bbox',
+        '--no-bbox',
         action='store_true',
-        help='Crop each COCO annotation bbox at 1.25x margin before letterbox.',
+        help='Ignore COCO ann bbox; use the full image [0,0,W,H] as bbox for topdown preprocess.',
     )
     args = parser.parse_args()
 
@@ -186,6 +194,8 @@ def main():
 
     if args.max_samples is not None:
         print(f'Running on first {args.max_samples} annotations only')
+    if args.no_bbox:
+        print('Using full-image bbox (--no-bbox)')
 
     for model_path in args.models:
         if not model_path.exists():
@@ -198,7 +208,7 @@ def main():
             predictions_dir=args.predictions_dir,
             dataset_name=args.dataset_name,
             max_samples=args.max_samples,
-            use_bbox=args.bbox,
+            no_bbox=args.no_bbox,
         )
         print(f'Exporting predictions for {model_path.name} -> {output_path}')
         export_predictions(
@@ -208,7 +218,7 @@ def main():
             output_path,
             max_samples=args.max_samples,
             force_rerun=args.force_rerun,
-            use_bbox=args.bbox,
+            no_bbox=args.no_bbox,
         )
 
 

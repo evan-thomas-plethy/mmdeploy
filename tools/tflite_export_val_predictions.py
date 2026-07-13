@@ -59,9 +59,9 @@ def main():
         help='Re-run inference even if prediction JSON exists.',
     )
     parser.add_argument(
-        '--bbox',
+        '--no-bbox',
         action='store_true',
-        help='Crop each COCO annotation bbox at 1.25x margin before letterbox.',
+        help='Ignore COCO ann bbox; use the full image [0,0,W,H] as bbox for topdown preprocess.',
     )
     args = parser.parse_args()
 
@@ -74,6 +74,8 @@ def main():
 
     if args.max_samples is not None:
         print(f'Running on first {args.max_samples} annotations only')
+    if args.no_bbox:
+        print('Using full-image bbox (--no-bbox)')
 
     for model_path in args.models:
         if not model_path.exists():
@@ -86,7 +88,7 @@ def main():
             predictions_dir=args.predictions_dir,
             dataset_name=args.dataset_name,
             max_samples=args.max_samples,
-            use_bbox=args.bbox,
+            no_bbox=args.no_bbox,
         )
         print(f'Exporting predictions for {model_path.name} -> {output_path}')
         export_tflite_predictions(
@@ -96,7 +98,7 @@ def main():
             output_path,
             max_samples=args.max_samples,
             force_rerun=args.force_rerun,
-            use_bbox=args.bbox,
+            no_bbox=args.no_bbox,
         )
 
 

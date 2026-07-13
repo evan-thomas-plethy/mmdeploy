@@ -70,9 +70,9 @@ def predictions_output_path(
     predictions_dir=None,
     dataset_name=None,
     max_samples=None,
-    use_bbox=False,
+    no_bbox=False,
 ):
-    """Build predictions/{backend}_{model}_{dataset}.keypoints.json."""
+    """Build predictions/{backend}_{model}_{dataset}[_nobbox].keypoints.json."""
     backend = backend.lower()
     if backend not in ('coreml', 'tflite'):
         raise ValueError(f'backend must be coreml or tflite, got {backend!r}')
@@ -81,8 +81,8 @@ def predictions_output_path(
     model_tag = sanitize_path_tag(Path(model_path).stem)
     dataset_tag = infer_dataset_name(ann_file, dataset_name)
     filename = f'{backend}_{model_tag}_{dataset_tag}'
-    if use_bbox:
-        filename += '_bbox'
+    if no_bbox:
+        filename += '_nobbox'
     if max_samples is not None:
         filename += f'_n{max_samples}'
     out_dir = Path(predictions_dir) if predictions_dir is not None else PREDICTIONS_DIR

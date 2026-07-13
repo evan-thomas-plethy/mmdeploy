@@ -1,7 +1,8 @@
 """TFLite val inference shared by tflite_export_val_predictions.py.
 
-Pre/post matches the mobile production pipeline: optional expanded bbox crop,
-letterbox to 192x256 with black padding, sigmoid SIMCC decode.
+Pre/post matches mmpose val_pipeline geometry (portable to Swift/Java):
+  GetBBoxCenterScale(1.25) -> TopdownAffine(192x256) -> SimCC decode
+  -> map model coords back to image space.
 """
 
 import json
@@ -21,8 +22,8 @@ except ImportError:
 
 from rtmpose_coreml_utils import (
     apply_nms,
-    postprocess_letterbox,
-    preprocess_rtmpose_mobile,
+    postprocess_topdown,
+    preprocess_topdown,
 )
 
 MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
@@ -37,7 +38,8 @@ def _bbox_xywh_from_xyxy(bbox_xyxy):
 def normalize_for_tflite(warped_rgb):
     """Normalize a warped uint8 RGB crop (H, W, 3) for TFLite input.
 
-    (pixel - MEAN) / STD in RGB order, matching the mmpose data preprocessor.
+    (pixel - MEAN) / STD in RGB order, matching the mmpose data preprocessor
+    (bgr_to_rgb=True + ImageNet mean/std).
     """
     arr = np.asarray(warped_rgb, dtype=np.float32)
     return (arr - MEAN) / STD
@@ -98,12 +100,13 @@ def export_tflite_predictions(
     output_path,
     max_samples=None,
     force_rerun=False,
-    use_bbox=False,
+    no_bbox=False,
 ):
     """Run TFLite val inference and write COCO keypoints JSON.
 
-    use_bbox: when True, crop each COCO annotation bbox at 1.25x margin before
-    letterbox (matches mobile RTMDet -> RTMPose pipeline).
+    Default: each COCO annotation bbox with mmpose-aligned topdown preprocess
+    (GetBBoxCenterScale + TopdownAffine). With no_bbox=True, use the full image
+    [0, 0, W, H] as the bbox and apply the same preprocess.
     """
     model_path = Path(model_path)
     output_path = Path(output_path)
@@ -132,7 +135,9 @@ def export_tflite_predictions(
 
     for ann_id in ann_ids:
         ann = coco.loadAnns(ann_id)[0]
-        if 'bbox' not in ann or 'keypoints' not in ann:
+        if 'keypoints' not in ann:
+            continue
+        if not no_bbox and 'bbox' not in ann:
             continue
 
         img_id = ann['image_id']
@@ -150,11 +155,14 @@ def export_tflite_predictions(
 
         img_rgb, img_w, img_h = image_cache[img_id]
 
-        x, y, w, h = ann['bbox']
-        x1 = np.clip(x, 0, img_w - 1)
-        y1 = np.clip(y, 0, img_h - 1)
-        x2 = np.clip(x + w, 0, img_w - 1)
-        y2 = np.clip(y + h, 0, img_h - 1)
+        if no_bbox:
+            x1, y1, x2, y2 = 0.0, 0.0, float(img_w), float(img_h)
+        else:
+            x, y, w, h = ann['bbox']
+            x1 = np.clip(x, 0, img_w - 1)
+            y1 = np.clip(y, 0, img_h - 1)
+            x2 = np.clip(x + w, 0, img_w - 1)
+            y2 = np.clip(y + h, 0, img_h - 1)
         bbox_xywh = _bbox_xywh_from_xyxy([x1, y1, x2, y2])
 
         if 'area' in ann:
@@ -162,16 +170,13 @@ def export_tflite_predictions(
         else:
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
-        bbox_xyxy = [x1, y1, x2, y2] if use_bbox else None
-        warped, params, crop_offset_x, crop_offset_y = preprocess_rtmpose_mobile(
-            img_rgb, bbox_xyxy=bbox_xyxy)
+        warped, center, scale = preprocess_topdown(
+            img_rgb, bbox_xyxy=[x1, y1, x2, y2])
         normalized = normalize_for_tflite(warped)
         input_tensor = _format_input_tensor(normalized, input_detail)
         simcc_x, simcc_y = _run_inference(
             interpreter, input_detail, simcc_x_detail, simcc_y_detail, input_tensor)
-        keypoints = postprocess_letterbox(
-            simcc_x, simcc_y, params,
-            crop_offset_x=crop_offset_x, crop_offset_y=crop_offset_y)
+        keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
 
         raw_instances.append({
             'img_id': img_id,

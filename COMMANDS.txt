@@ -129,8 +129,10 @@ ls -lh ${MODEL_NAME}_float32.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}
 
 # 4a. On Mac only (no conda env; deps: coremltools, opencv-python, pillow, numpy)
 # See "File transfer" section: rsync fp32 + int8 .mlmodel, val data + scripts instance -> Mac first
-# Pre/post matches production iOS CoreML pipeline (letterbox; add --bbox for 1.25x ann crop)
-# Output: predictions/coreml_{model_stem}_{dataset}[_bbox].keypoints.json
+# Pre/post matches mmpose val_pipeline (GetBBoxCenterScale 1.25 + TopdownAffine 192x256;
+#   portable steps in tools/rtmpose_coreml_utils.py for Swift/Java port).
+# Add --no-bbox to use the full image [0,0,W,H] as the bbox (same preprocess).
+# Output: predictions/coreml_{model_stem}_{dataset}[_nobbox].keypoints.json
 cd $LOCAL_VISIONAI/mmdeploy
 VAL_ANN=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
 VAL_IMG=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/val2017
@@ -410,9 +412,10 @@ ls -lh ${TFLITE_MODEL_NAME}_int8.tflite
 
 # 5a. Env: mmpose — export TFLite val predictions (run before 5b / overlays)
 # Needs mmcv/mmpose + ai-edge-litert (one-time install above).
-# Preprocess: letterbox full image to 192x256 (mobile geometry). Add --bbox to
-# crop each COCO ann bbox at 1.25x margin first (matches RTMDet -> RTMPose app).
-# Output: predictions/tflite_{model_stem}_{dataset}[_bbox].keypoints.json
+# Preprocess: mmpose val_pipeline geometry — per COCO ann bbox, GetBBoxCenterScale(1.25)
+# then TopdownAffine to 192x256 (see tools/rtmpose_coreml_utils.py; Swift/Java-friendly).
+# Add --no-bbox to use the full image [0,0,W,H] as the bbox (same preprocess steps).
+# Output: predictions/tflite_{model_stem}_{dataset}[_nobbox].keypoints.json
 conda deactivate && conda activate mmpose
 export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
 cd ~/visionAI/mmdeploy
