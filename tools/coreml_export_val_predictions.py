@@ -50,7 +50,8 @@ def export_predictions(
 
     Per annotation: GetBBoxCenterScale(1.25) + TopdownAffine(192x256) + SimCC
     decode mapped back to image space (same geometry as mmpose val_pipeline).
-    With no_bbox=True, use the full image [0, 0, W, H] as the bbox.
+    With no_bbox=True, use the full image [0, 0, W, H] as the bbox and
+    padding=1.0 (no 1.25x expand).
     """
     output_path = Path(output_path)
     if output_path.exists() and not force_rerun:
@@ -103,7 +104,10 @@ def export_predictions(
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
         pil_image, center, scale = preprocess_topdown_pil(
-            img_rgb, bbox_xyxy=[x1, y1, x2, y2])
+            img_rgb,
+            bbox_xyxy=[x1, y1, x2, y2],
+            padding=1.0 if no_bbox else 1.25,
+        )
         prediction = run_coreml_predict(model, pil_image, input_name)
         simcc_x, simcc_y = extract_simcc(prediction, simcc_x_name, simcc_y_name)
         keypoints = postprocess_topdown(simcc_x, simcc_y, center, scale)
@@ -181,7 +185,7 @@ def main():
     parser.add_argument(
         '--no-bbox',
         action='store_true',
-        help='Ignore COCO ann bbox; use the full image [0,0,W,H] as bbox for topdown preprocess.',
+        help='Ignore COCO ann bbox; use full image [0,0,W,H] with padding=1.0 (no 1.25x expand).',
     )
     args = parser.parse_args()
 
@@ -195,7 +199,7 @@ def main():
     if args.max_samples is not None:
         print(f'Running on first {args.max_samples} annotations only')
     if args.no_bbox:
-        print('Using full-image bbox (--no-bbox)')
+        print('Using full-image bbox with padding=1.0 (--no-bbox)')
 
     for model_path in args.models:
         if not model_path.exists():

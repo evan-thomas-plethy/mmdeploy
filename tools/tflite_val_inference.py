@@ -105,8 +105,8 @@ def export_tflite_predictions(
     """Run TFLite val inference and write COCO keypoints JSON.
 
     Default: each COCO annotation bbox with mmpose-aligned topdown preprocess
-    (GetBBoxCenterScale + TopdownAffine). With no_bbox=True, use the full image
-    [0, 0, W, H] as the bbox and apply the same preprocess.
+    (GetBBoxCenterScale padding=1.25 + TopdownAffine). With no_bbox=True, use
+    the full image [0, 0, W, H] as the bbox and padding=1.0 (no 1.25x expand).
     """
     model_path = Path(model_path)
     output_path = Path(output_path)
@@ -171,7 +171,10 @@ def export_tflite_predictions(
             area = float(np.clip((x2 - x1) * (y2 - y1) * 0.53, a_min=1.0, a_max=None))
 
         warped, center, scale = preprocess_topdown(
-            img_rgb, bbox_xyxy=[x1, y1, x2, y2])
+            img_rgb,
+            bbox_xyxy=[x1, y1, x2, y2],
+            padding=1.0 if no_bbox else 1.25,
+        )
         normalized = normalize_for_tflite(warped)
         input_tensor = _format_input_tensor(normalized, input_detail)
         simcc_x, simcc_y = _run_inference(

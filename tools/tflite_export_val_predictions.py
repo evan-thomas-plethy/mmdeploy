@@ -61,7 +61,7 @@ def main():
     parser.add_argument(
         '--no-bbox',
         action='store_true',
-        help='Ignore COCO ann bbox; use the full image [0,0,W,H] as bbox for topdown preprocess.',
+        help='Ignore COCO ann bbox; use full image [0,0,W,H] with padding=1.0 (no 1.25x expand).',
     )
     args = parser.parse_args()
 
@@ -75,7 +75,7 @@ def main():
     if args.max_samples is not None:
         print(f'Running on first {args.max_samples} annotations only')
     if args.no_bbox:
-        print('Using full-image bbox (--no-bbox)')
+        print('Using full-image bbox with padding=1.0 (--no-bbox)')
 
     for model_path in args.models:
         if not model_path.exists():

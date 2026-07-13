@@ -131,7 +131,7 @@ ls -lh ${MODEL_NAME}_float32.mlmodel ${MODEL_NAME}_float16.mlmodel ${MODEL_NAME}
 # See "File transfer" section: rsync fp32 + int8 .mlmodel, val data + scripts instance -> Mac first
 # Pre/post matches mmpose val_pipeline (GetBBoxCenterScale 1.25 + TopdownAffine 192x256;
 #   portable steps in tools/rtmpose_coreml_utils.py for Swift/Java port).
-# Add --no-bbox to use the full image [0,0,W,H] as the bbox (same preprocess).
+# Add --no-bbox to use full image [0,0,W,H] with padding=1.0 (no 1.25x expand).
 # Output: predictions/coreml_{model_stem}_{dataset}[_nobbox].keypoints.json
 cd $LOCAL_VISIONAI/mmdeploy
 VAL_ANN=$LOCAL_VISIONAI/mmpose/data/${VAL_DATA_DIRNAME}/annotations/person_keypoints_val2017.json
@@ -414,7 +414,7 @@ ls -lh ${TFLITE_MODEL_NAME}_int8.tflite
 # Needs mmcv/mmpose + ai-edge-litert (one-time install above).
 # Preprocess: mmpose val_pipeline geometry — per COCO ann bbox, GetBBoxCenterScale(1.25)
 # then TopdownAffine to 192x256 (see tools/rtmpose_coreml_utils.py; Swift/Java-friendly).
-# Add --no-bbox to use the full image [0,0,W,H] as the bbox (same preprocess steps).
+# Add --no-bbox to use full image [0,0,W,H] with padding=1.0 (no 1.25x expand).
 # Output: predictions/tflite_{model_stem}_{dataset}[_nobbox].keypoints.json
 conda deactivate && conda activate mmpose
 export PYTHONPATH=/home/ubuntu/visionAI/mmpose:$PYTHONPATH
